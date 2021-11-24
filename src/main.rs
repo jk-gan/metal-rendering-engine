@@ -127,14 +127,6 @@ fn main() {
             render_encoder.set_vertex_buffer(0, Some(&position_buffer), 0);
             render_encoder.set_vertex_buffer(1, Some(&color_buffer), 0);
 
-            // let physical_size = window.inner_size();
-            // render_encoder.set_scissor_rect(MTLScissorRect {
-            //     x: 0,
-            //     y: 0,
-            //     width: physical_size.width as _,
-            //     height: physical_size.height as _,
-            // });
-
             render_encoder.set_render_pipeline_state(&pipeline_state);
             render_encoder.draw_primitives_instanced(MTLPrimitiveType::Triangle, 0, 3, 1);
             // render_encoder.draw_primitives(MTLPrimitiveType::Triangle, 0, 3);
