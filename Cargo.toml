@@ -1,0 +1,13 @@
+[package]
+name = "metal-renderer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cocoa = "0.24.0"
+core-foundation = "0.9.2"
+core-graphics-types = "0.1.1"
+metal = "0.23.1"
+winit = "0.25.0"
