@@ -495,7 +495,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "metal-renderer"
+name = "metal-rendering-engine"
 version = "0.1.0"
 dependencies = [
  "cocoa",
