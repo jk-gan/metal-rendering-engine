@@ -10,6 +10,8 @@ use winit::{
     window::WindowBuilder,
 };
 
+mod shader_bindings;
+
 const INITIAL_WINDOW_WIDTH: u32 = 800;
 const INITIAL_WINDOW_HEIGHT: u32 = 600;
 
