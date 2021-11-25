@@ -10,9 +10,12 @@ use winit::{
     window::WindowBuilder,
 };
 
+const INITIAL_WINDOW_WIDTH: u32 = 800;
+const INITIAL_WINDOW_HEIGHT: u32 = 600;
+
 fn main() {
     let event_loop = EventLoop::new();
-    let size = LogicalSize::new(800, 600);
+    let size = LogicalSize::new(INITIAL_WINDOW_WIDTH, INITIAL_WINDOW_HEIGHT);
     let window = WindowBuilder::new()
         .with_inner_size(size)
         .with_title("Metal Rendering Engine".to_string())
@@ -52,7 +55,7 @@ fn main() {
     layer.set_drawable_size(CGSize::new(draw_size.width as f64, draw_size.height as f64));
 
     let library_path =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/shaders.metallib");
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
 
     let library = device.new_library_with_file(library_path).unwrap();
     let vertex_function = library.get_function("vertex_main", None).unwrap();
@@ -67,7 +70,7 @@ fn main() {
         .object_at(0)
         .unwrap();
     color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
-    pipeline_state_descriptor.set_depth_attachment_pixel_format(MTLPixelFormat::Depth32Float);
+    pipeline_state_descriptor.set_depth_attachment_pixel_format(MTLPixelFormat::Invalid);
 
     let pipeline_state = device
         .new_render_pipeline_state(&pipeline_state_descriptor)
@@ -129,7 +132,6 @@ fn main() {
 
             render_encoder.set_render_pipeline_state(&pipeline_state);
             render_encoder.draw_primitives_instanced(MTLPrimitiveType::Triangle, 0, 3, 1);
-            // render_encoder.draw_primitives(MTLPrimitiveType::Triangle, 0, 3);
             render_encoder.end_encoding();
 
             command_buffer.present_drawable(&drawable);

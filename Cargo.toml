@@ -1,9 +1,13 @@
 [package]
 name = "metal-rendering-engine"
-version = "0.1.0"
+authors = ["Gan Jun Kai"]
+version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.59.1"
 
 [dependencies]
 cocoa = "0.24.0"
