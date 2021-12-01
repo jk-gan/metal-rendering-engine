@@ -9,3 +9,8 @@
 <div align="center">
   <img alt="Obsidian serve" src="./.github/img/hello-triangle.png" >
 </div>
+
+### Camera Zoom
+<div align="center">
+  <img alt="Zoom" src="./.github/img/zoom.gif" >
+</div>
