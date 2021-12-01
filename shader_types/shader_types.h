@@ -4,8 +4,9 @@
 #include <simd/simd.h>
 
 typedef struct {
-    vector_float2 position;
-    vector_float2 texture_coord;
-} TexuredVertex;
+  matrix_float4x4 modelMatrix;
+  matrix_float4x4 viewMatrix;
+  matrix_float4x4 projectionMatrix;
+} Uniforms;
 
 #endif /* shader_types.h */
