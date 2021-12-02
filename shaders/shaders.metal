@@ -27,7 +27,7 @@ vertex float4 vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &uni
 }
 
 fragment float4 fragment_main(VertexOut vertex_out [[stage_in]]) {
-  return float4(0, 0, 0, 1);
+  return float4(1, 1, 1, 0.5);
 }
 
 // vertex VertexOut vertex_main(uint vid [[vertex_id]],
