@@ -74,8 +74,8 @@ impl Renderer {
 
         color_attachment.set_texture(Some(&drawable.texture()));
         color_attachment.set_load_action(MTLLoadAction::Clear);
-        color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-        // color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
+        // color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
+        color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
 
         let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
@@ -92,18 +92,20 @@ impl Renderer {
 
         for model in self.models.iter() {
             render_encoder.set_vertex_buffer(0, Some(&model.vertex_buffer), 0);
+            render_encoder.set_vertex_buffer(1, Some(&model.normal_buffer), 0);
             render_encoder.set_vertex_bytes(
-                1,
+                2,
                 std::mem::size_of::<Uniforms>() as u64,
                 self.uniforms.as_ptr() as *const _,
             );
 
             render_encoder.set_render_pipeline_state(&model.pipeline_state);
 
+            // render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
             render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
             render_encoder.draw_indexed_primitives(
                 MTLPrimitiveType::Triangle,
-                model.index_buffer.length(),
+                model.indices.len() as u64,
                 MTLIndexType::UInt32,
                 &model.index_buffer,
                 0,

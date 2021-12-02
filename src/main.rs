@@ -99,7 +99,7 @@ fn main() {
                     MouseScrollDelta::PixelDelta(_) => {}
                 },
                 DeviceEvent::Button {
-                    button: 1, // right mouse button
+                    button: 0, // right mouse button
                     state,
                 } => {
                     program_state.left_mouse_pressed = *state == ElementState::Pressed;
