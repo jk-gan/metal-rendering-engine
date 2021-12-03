@@ -30,8 +30,10 @@ impl Node {
 
     pub fn model_matrix(&self) -> Mat4 {
         let translate_matrix = Mat4::from_translation(self.position);
-        let rotate_matrix = Mat4::from_translation(self.rotation);
-        let scale_matrix = Mat4::from_translation(self.scale);
+        let rotate_matrix = Mat4::from_rotation_x(self.rotation.x)
+            * Mat4::from_rotation_y(self.rotation.y)
+            * Mat4::from_rotation_z(self.rotation.z);
+        let scale_matrix = Mat4::from_scale(self.scale);
 
         translate_matrix * rotate_matrix * scale_matrix
     }

@@ -120,6 +120,10 @@ impl ArcballCamera {
         &self.camera.node.rotation
     }
 
+    pub fn position(&self) -> &Vec3 {
+        &self.camera.node.position
+    }
+
     pub fn view_matrix(&self) -> &Mat4 {
         &self.view_matrix
     }
@@ -138,7 +142,7 @@ impl ArcballCamera {
             * Mat4::from_rotation_y(self.rotation().y)
             * Mat4::from_rotation_z(0.0);
         let matrix = (rotate_matrix * translate_matrix).inverse();
-        self.set_position(Mat3::from_mat4(rotate_matrix) * -matrix.col(2).truncate());
+        self.set_position(Mat3::from_mat4(rotate_matrix) * -matrix.col(3).truncate());
 
         matrix
     }

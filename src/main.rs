@@ -60,66 +60,75 @@ fn main() {
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
-        autoreleasepool(|| match event {
-            Event::MainEventsCleared => window.request_redraw(),
-            Event::WindowEvent {
-                ref event,
-                window_id,
-            } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested
-                | WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(size) => {
-                    renderer.resize(size.width, size.height);
-                }
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    renderer.resize(new_inner_size.width, new_inner_size.height);
-                }
-                // WindowEvent::MouseInput {
-                //     state,
-                //     button: MouseButton::Right,
-                //     ..
-                // } => {
-                //     program_state.left_mouse_pressed = *state == ElementState::Pressed;
-                // }
-                _ => {}
-            },
-            Event::DeviceEvent { ref event, .. } => match event {
-                DeviceEvent::MouseWheel { delta } => match delta {
-                    MouseScrollDelta::LineDelta(_x, y) => {
-                        renderer.zoom(*y);
-                    }
-                    MouseScrollDelta::PixelDelta(_) => {}
-                },
-                DeviceEvent::Button {
-                    button: 0, // right mouse button
-                    state,
-                } => {
-                    program_state.left_mouse_pressed = *state == ElementState::Pressed;
-                }
-                DeviceEvent::MouseMotion { delta } => {
-                    if program_state.left_mouse_pressed {
-                        renderer.rotate(*delta);
-                    }
-                }
-                _ => {}
-            },
-            Event::RedrawRequested(_) => {
-                let drawable = match layer.next_drawable() {
-                    Some(drawable) => drawable,
-                    None => return,
-                };
+        autoreleasepool(|| {
+            *control_flow = ControlFlow::Poll;
 
-                renderer.draw(drawable);
+            match event {
+                Event::MainEventsCleared => window.request_redraw(),
+                Event::WindowEvent {
+                    ref event,
+                    window_id,
+                } if window_id == window.id() => match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(size) => {
+                        layer.set_drawable_size(CGSize::new(size.width as f64, size.height as f64));
+                        renderer.resize(size.width, size.height);
+                    }
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                        layer.set_drawable_size(CGSize::new(
+                            new_inner_size.width as f64,
+                            new_inner_size.height as f64,
+                        ));
+                        renderer.resize(new_inner_size.width, new_inner_size.height);
+                    }
+                    // WindowEvent::MouseInput {
+                    //     state,
+                    //     button: MouseButton::Right,
+                    //     ..
+                    // } => {
+                    //     program_state.left_mouse_pressed = *state == ElementState::Pressed;
+                    // }
+                    _ => {}
+                },
+                Event::DeviceEvent { ref event, .. } => match event {
+                    DeviceEvent::MouseWheel { delta } => match delta {
+                        MouseScrollDelta::LineDelta(_x, y) => {
+                            renderer.zoom(*y);
+                        }
+                        MouseScrollDelta::PixelDelta(_) => {}
+                    },
+                    DeviceEvent::Button {
+                        button: 0, // right mouse button
+                        state,
+                    } => {
+                        program_state.left_mouse_pressed = *state == ElementState::Pressed;
+                    }
+                    DeviceEvent::MouseMotion { delta } => {
+                        if program_state.left_mouse_pressed {
+                            renderer.rotate(*delta);
+                        }
+                    }
+                    _ => {}
+                },
+                Event::RedrawRequested(_) => {
+                    let drawable = match layer.next_drawable() {
+                        Some(drawable) => drawable,
+                        None => return,
+                    };
+
+                    renderer.draw(drawable);
+                }
+                _ => {}
             }
-            _ => {}
         });
     })
 }

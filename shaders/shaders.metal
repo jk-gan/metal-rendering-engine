@@ -10,37 +10,37 @@ struct VertexIn {
 
 struct VertexOut {
   float4 position [[position]];
-  float3 normal;
+  float3 worldPosition;
+  float3 worldNormal;
 };
-
-// struct VertexOut {
-//   float4 position [[position]];
-//   float4 color;
-// };
 
 vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &uniforms [[buffer(2)]]) {
   VertexOut out {
     .position = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix * vertexIn.position,
-    .normal = vertexIn.normal
+    .worldPosition = (uniforms.modelMatrix * vertexIn.position).xyz,
+    .worldNormal = uniforms.normalMatrix * vertexIn.normal
   };
   return out;
 }
 
-fragment float4 fragment_main(VertexOut in [[stage_in]]) {
-  // return float4(1, 1, 1, 0.5);
-  return float4(in.normal, 1);
+fragment float4 fragment_main(VertexOut in [[stage_in]],
+  constant Light *lights [[buffer(3)]],
+  constant FragementUniforms &fragmentUniforms [[buffer(4)]]) {
+
+  // return float4(0, 0, 0, 1);
+  float3 baseColor = float3(0, 0, 1);
+  float3 diffuseColor = 0;
+
+  float3 normalDirection = normalize(in.worldNormal);
+  for (unsigned int i = 0; i < fragmentUniforms.lightCount; i++) {
+    Light light = lights[i];
+    if (light.type == Sunlight) {
+      float3 lightDirection = normalize(-light.position);
+      float diffuseIntensity = saturate(-dot(lightDirection, normalDirection));
+      diffuseColor += light.color * baseColor * diffuseIntensity;
+    }
+  }
+
+  float3 color = diffuseColor;
+  return float4(color, 1);
 }
-
-// vertex VertexOut vertex_main(uint vid [[vertex_id]],
-//              constant float4 *position [[buffer(0)]],
-//              constant float4 *color [[buffer(1)]]) {
-//   VertexOut out {
-//     .position = position[vid],
-//     .color = color[vid]
-//   };
-//   return out;
-// }
-
-// fragment float4 fragment_main(VertexOut vertex_out [[ stage_in ]]) {
-//   return vertex_out.color;
-// }

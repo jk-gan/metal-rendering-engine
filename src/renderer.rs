@@ -1,7 +1,9 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::model::Model;
-use crate::shader_bindings::Uniforms;
-use glam::{Mat4, Vec3};
+use crate::shader_bindings::{
+    FragementUniforms, Light, LightType_Sunlight, LightType_unused, Uniforms,
+};
+use glam::{Mat3A, Mat4, Vec3};
 use metal::*;
 
 pub struct Renderer {
@@ -9,8 +11,11 @@ pub struct Renderer {
     command_queue: CommandQueue,
     library: Library,
     uniforms: [Uniforms; 1],
+    fragment_uniforms: [FragementUniforms; 1],
     camera: ArcballCamera,
     models: Vec<Model>,
+    depth_stencil_state: DepthStencilState,
+    lights: Vec<Light>,
 }
 
 impl Renderer {
@@ -25,20 +30,37 @@ impl Renderer {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let model = Model::from_obj_filename("teapot.obj", &device, &library);
+        let mut model = Model::from_obj_filename("teapot.obj", &device, &library);
+        model.set_position(Vec3::new(0.0, 0.0, 0.0));
+        model.set_rotation(Vec3::new(0.0, 45.0_f32.to_radians(), 0.0));
         let models = vec![model];
 
-        let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
-        let rotation = Mat4::from_rotation_y(45.0_f32.to_radians());
-        let aspect_ratio = 800.0 / 800.0;
-        let projection_matrix =
-            Mat4::perspective_lh(45.0_f32.to_radians(), aspect_ratio, 0.1, 100.0);
         let uniforms = Uniforms {
-            modelMatrix: unsafe { std::mem::transmute(translation * rotation) },
-            viewMatrix: unsafe {
-                std::mem::transmute(Mat4::from_translation(Vec3::new(0.0, 0.0, -3.0)).inverse())
+            modelMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
+            viewMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
+            projectionMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
+            normalMatrix: unsafe { std::mem::transmute(Mat3A::ZERO) },
+        };
+
+        let depth_stencil_state = Self::build_depth_stencil_state(&device);
+
+        let sunlight = {
+            let mut light = Self::build_default_light();
+            light.position = unsafe { std::mem::transmute([1.0_f32, 2.0_f32, -2.0_f32, 1.0_f32]) };
+            light
+        };
+
+        let mut lights: Vec<Light> = vec![];
+        lights.push(sunlight);
+
+        let camera_position = camera.position();
+
+        let fragment_uniforms = FragementUniforms {
+            lightCount: lights.len() as u32,
+            cameraPosition: unsafe {
+                std::mem::transmute([camera_position.x, camera_position.y, camera_position.z, 1.0])
             },
-            projectionMatrix: unsafe { std::mem::transmute(projection_matrix) },
+            __bindgen_padding_0: unsafe { std::mem::zeroed() },
         };
 
         Self {
@@ -46,8 +68,11 @@ impl Renderer {
             command_queue,
             library,
             uniforms: [uniforms],
+            fragment_uniforms: [fragment_uniforms],
             camera,
             models,
+            depth_stencil_state,
+            lights,
         }
     }
 
@@ -78,19 +103,32 @@ impl Renderer {
         color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
 
-        let translation = Mat4::from_translation(Vec3::new(0.0, 0.0, 0.0));
-        let rotation = Mat4::from_rotation_y(45.0_f32.to_radians());
-        let scale = Mat4::from_scale(Vec3::new(1.0, 1.0, 1.0));
-        self.uniforms[0].modelMatrix =
-            unsafe { std::mem::transmute(translation * rotation * scale) };
         self.uniforms[0].projectionMatrix =
             unsafe { std::mem::transmute(*self.camera.projection_matrix()) };
         self.uniforms[0].viewMatrix = unsafe { std::mem::transmute(*self.camera.view_matrix()) };
 
         let command_buffer = self.command_queue.new_command_buffer();
         let render_encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor);
+        render_encoder.set_depth_stencil_state(&self.depth_stencil_state);
+        render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
+        render_encoder.set_cull_mode(MTLCullMode::Back);
+
+        render_encoder.set_fragment_bytes(
+            3,
+            std::mem::size_of::<Light>() as u64 * self.lights.len() as u64,
+            self.lights.as_ptr() as *const _,
+        );
+        render_encoder.set_fragment_bytes(
+            4,
+            std::mem::size_of::<FragementUniforms>() as u64,
+            self.fragment_uniforms.as_ptr() as *const _,
+        );
 
         for model in self.models.iter() {
+            self.uniforms[0].modelMatrix = unsafe { std::mem::transmute(model.model_matrix()) };
+            self.uniforms[0].normalMatrix =
+                unsafe { std::mem::transmute(Mat3A::from_mat4(model.model_matrix())) };
+
             render_encoder.set_vertex_buffer(0, Some(&model.vertex_buffer), 0);
             render_encoder.set_vertex_buffer(1, Some(&model.normal_buffer), 0);
             render_encoder.set_vertex_bytes(
@@ -101,8 +139,7 @@ impl Renderer {
 
             render_encoder.set_render_pipeline_state(&model.pipeline_state);
 
-            // render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
-            render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
+            // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
             render_encoder.draw_indexed_primitives(
                 MTLPrimitiveType::Triangle,
                 model.indices.len() as u64,
@@ -112,10 +149,30 @@ impl Renderer {
             );
         }
 
-        // render_encoder.draw_primitives_instanced(MTLPrimitiveType::Triangle, 0, 3, 1);
         render_encoder.end_encoding();
 
         command_buffer.present_drawable(&drawable);
         command_buffer.commit();
+    }
+
+    fn build_default_light() -> Light {
+        unsafe {
+            Light {
+                position: std::mem::transmute([0.0_f32, 0.0_f32, 0.0_f32, 1.0_f32]),
+                color: std::mem::transmute([1.0_f32, 1.0_f32, 1.0_f32, 1.0_f32]),
+                specularColor: std::mem::transmute([0.6_f32, 0.6_f32, 0.6_f32, 1.0_f32]),
+                intensity: 1.0,
+                attenuation: std::mem::transmute([1.0_f32, 0.0_f32, 0.0_f32, 1.0_f32]),
+                type_: LightType_Sunlight,
+                __bindgen_padding_0: std::mem::zeroed(),
+            }
+        }
+    }
+
+    fn build_depth_stencil_state(device: &Device) -> DepthStencilState {
+        let descriptor = DepthStencilDescriptor::new();
+        descriptor.set_depth_compare_function(MTLCompareFunction::Less);
+        descriptor.set_depth_write_enabled(true);
+        device.new_depth_stencil_state(&descriptor)
     }
 }

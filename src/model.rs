@@ -1,4 +1,5 @@
 use crate::node::Node;
+use glam::{Mat4, Vec3};
 use metal::*;
 use std::mem;
 use tobj;
@@ -59,17 +60,17 @@ impl Model {
         let vertex_buffer = device.new_buffer_with_data(
             vertices.as_ptr() as *const _,
             mem::size_of::<f32>() as u64 * vertices.len() as u64,
-            MTLResourceOptions::StorageModeShared,
+            MTLResourceOptions::CPUCacheModeDefaultCache,
         );
         let index_buffer = device.new_buffer_with_data(
             indices.as_ptr() as *const _,
             mem::size_of::<u32>() as u64 * indices.len() as u64,
-            MTLResourceOptions::StorageModeShared,
+            MTLResourceOptions::CPUCacheModeDefaultCache,
         );
         let normal_buffer = device.new_buffer_with_data(
             normals.as_ptr() as *const _,
             mem::size_of::<f32>() as u64 * normals.len() as u64,
-            MTLResourceOptions::StorageModeShared,
+            MTLResourceOptions::CPUCacheModeDefaultCache,
         );
 
         let pipeline_state = Model::build_pipeline_state(library, device);
@@ -88,6 +89,18 @@ impl Model {
         )
     }
 
+    pub fn set_position(&mut self, position: Vec3) {
+        self.node.position = position;
+    }
+
+    pub fn set_rotation(&mut self, rotation: Vec3) {
+        self.node.rotation = rotation;
+    }
+
+    pub fn model_matrix(&self) -> Mat4 {
+        self.node.model_matrix()
+    }
+
     fn build_pipeline_state(library: &Library, device: &Device) -> RenderPipelineState {
         let vertex_function = library.get_function("vertex_main", None).unwrap();
         let fragment_function = library.get_function("fragment_main", None).unwrap();
@@ -98,13 +111,13 @@ impl Model {
         pipeline_state_descriptor.set_vertex_function(Some(&vertex_function));
         pipeline_state_descriptor.set_fragment_function(Some(&fragment_function));
         pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_descriptor));
+        pipeline_state_descriptor.set_depth_attachment_pixel_format(MTLPixelFormat::Depth32Float);
 
         let color_attachment = pipeline_state_descriptor
             .color_attachments()
             .object_at(0)
             .unwrap();
         color_attachment.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
-        // pipeline_state_descriptor.set_depth_attachment_pixel_format(MTLPixelFormat::Invalid);
 
         device
             .new_render_pipeline_state(&pipeline_state_descriptor)
