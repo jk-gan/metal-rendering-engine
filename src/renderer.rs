@@ -1,6 +1,9 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::model::Model;
-use crate::shader_bindings::{FragementUniforms, Light, LightType_Sunlight, Uniforms};
+use crate::shader_bindings::{
+    FragementUniforms, Light, LightType_Ambientlight, LightType_Pointlight, LightType_Sunlight,
+    Uniforms,
+};
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
 use metal::*;
 
@@ -21,7 +24,7 @@ impl Renderer {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
-        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.5, 0.0), 2.0);
+        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.3, 0.0), 2.0);
         camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
 
         let library_path =
@@ -48,15 +51,38 @@ impl Renderer {
             light
         };
 
+        let ambient_light = {
+            let mut light = Self::build_default_light();
+            light.color = unsafe { std::mem::transmute(Vec3A::new(0.5, 1.0, 0.0)) };
+            light.intensity = 0.1;
+            light.type_ = LightType_Ambientlight;
+            light
+        };
+
+        let red_light = {
+            let mut light = Self::build_default_light();
+            light.position = unsafe { std::mem::transmute(Vec3A::new(-5.0, 1.5, -0.5)) };
+            light.color = unsafe { std::mem::transmute(Vec3A::new(1.0, 0.0, 0.0)) };
+            light.attenuation = unsafe { std::mem::transmute(Vec3A::new(1.0, 3.0, 4.0)) };
+            light.type_ = LightType_Pointlight;
+            light
+        };
+
         let mut lights: Vec<Light> = vec![];
         lights.push(sunlight);
+        lights.push(ambient_light);
+        // lights.push(red_light);
 
         let camera_position = camera.position();
 
         let fragment_uniforms = FragementUniforms {
             lightCount: lights.len() as u32,
             cameraPosition: unsafe {
-                std::mem::transmute([camera_position.x, camera_position.y, camera_position.z, 1.0])
+                std::mem::transmute(Vec3A::new(
+                    camera_position.x,
+                    camera_position.y,
+                    camera_position.z,
+                ))
             },
             __bindgen_padding_0: unsafe { std::mem::zeroed() },
         };
@@ -96,8 +122,8 @@ impl Renderer {
             .unwrap();
         color_attachment.set_texture(Some(&drawable.texture()));
         color_attachment.set_load_action(MTLLoadAction::Clear);
-        // color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-        color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
+        color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
+        // color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
 
         let depth_buffer_descriptor = TextureDescriptor::new();
