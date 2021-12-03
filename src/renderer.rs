@@ -1,9 +1,7 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::model::Model;
-use crate::shader_bindings::{
-    FragementUniforms, Light, LightType_Sunlight, LightType_unused, Uniforms,
-};
-use glam::{Mat3A, Mat4, Vec3};
+use crate::shader_bindings::{FragementUniforms, Light, LightType_Sunlight, Uniforms};
+use glam::{Mat3A, Mat4, Vec3, Vec3A};
 use metal::*;
 
 pub struct Renderer {
@@ -46,7 +44,7 @@ impl Renderer {
 
         let sunlight = {
             let mut light = Self::build_default_light();
-            light.position = unsafe { std::mem::transmute([1.0_f32, 2.0_f32, -2.0_f32, 1.0_f32]) };
+            light.position = unsafe { std::mem::transmute(Vec3A::new(1.0, 2.0, -2.0)) };
             light
         };
 
@@ -96,12 +94,26 @@ impl Renderer {
             .color_attachments()
             .object_at(0)
             .unwrap();
-
         color_attachment.set_texture(Some(&drawable.texture()));
         color_attachment.set_load_action(MTLLoadAction::Clear);
         // color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
         color_attachment.set_clear_color(MTLClearColor::new(1.0, 1.0, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
+
+        let depth_buffer_descriptor = TextureDescriptor::new();
+        depth_buffer_descriptor.set_width(3000);
+        depth_buffer_descriptor.set_height(3000);
+        depth_buffer_descriptor.set_pixel_format(MTLPixelFormat::Depth32Float);
+        depth_buffer_descriptor.set_storage_mode(MTLStorageMode::Private);
+        depth_buffer_descriptor
+            .set_usage(MTLTextureUsage::RenderTarget | MTLTextureUsage::ShaderRead);
+        let depth_attachment = render_pass_descriptor.depth_attachment().unwrap();
+        depth_attachment.set_texture(Some(&self.device.new_texture(&depth_buffer_descriptor)));
+        depth_attachment.set_load_action(MTLLoadAction::Clear);
+        depth_attachment.set_store_action(MTLStoreAction::Store);
+        depth_attachment.set_clear_depth(1.0);
+        let stencil_attachment = render_pass_descriptor.stencil_attachment().unwrap();
+        stencil_attachment.set_texture(depth_attachment.texture());
 
         self.uniforms[0].projectionMatrix =
             unsafe { std::mem::transmute(*self.camera.projection_matrix()) };
@@ -110,8 +122,8 @@ impl Renderer {
         let command_buffer = self.command_queue.new_command_buffer();
         let render_encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor);
         render_encoder.set_depth_stencil_state(&self.depth_stencil_state);
-        render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
-        render_encoder.set_cull_mode(MTLCullMode::Back);
+        // render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
+        // render_encoder.set_cull_mode(MTLCullMode::Back);
 
         render_encoder.set_fragment_bytes(
             3,
@@ -158,11 +170,11 @@ impl Renderer {
     fn build_default_light() -> Light {
         unsafe {
             Light {
-                position: std::mem::transmute([0.0_f32, 0.0_f32, 0.0_f32, 1.0_f32]),
-                color: std::mem::transmute([1.0_f32, 1.0_f32, 1.0_f32, 1.0_f32]),
-                specularColor: std::mem::transmute([0.6_f32, 0.6_f32, 0.6_f32, 1.0_f32]),
+                position: std::mem::transmute(Vec3A::new(0.0, 0.0, 0.0)),
+                color: std::mem::transmute(Vec3A::new(1.0, 1.0, 1.0)),
+                specularColor: std::mem::transmute(Vec3A::new(0.6, 0.6, 0.6)),
                 intensity: 1.0,
-                attenuation: std::mem::transmute([1.0_f32, 0.0_f32, 0.0_f32, 1.0_f32]),
+                attenuation: std::mem::transmute(Vec3A::new(1.0, 0.0, 0.0)),
                 type_: LightType_Sunlight,
                 __bindgen_padding_0: std::mem::zeroed(),
             }

@@ -19,7 +19,7 @@ struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         let fov_degrees = 70.0;
-        let aspect_ratio = 1.0;
+        let aspect_ratio = 1080.0 / 720.0;
         let z_near = 0.001;
         let z_far = 100.0;
         let node = Node::default();

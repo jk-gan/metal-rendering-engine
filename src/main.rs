@@ -17,8 +17,8 @@ use winit::{
 
 mod shader_bindings;
 
-const INITIAL_WINDOW_WIDTH: u32 = 800;
-const INITIAL_WINDOW_HEIGHT: u32 = 800;
+const INITIAL_WINDOW_WIDTH: u32 = 1080;
+const INITIAL_WINDOW_HEIGHT: u32 = 720;
 
 struct State {
     left_mouse_pressed: bool,
