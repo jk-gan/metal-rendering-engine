@@ -35,4 +35,16 @@ typedef struct {
   vector_float3 cameraPosition;
 } FragementUniforms;
 
+typedef enum {
+  BufferIndexVertices = 0,
+  BufferIndexLights = 1,
+  BufferIndexUniforms = 2,
+  BufferIndexFragmentUniforms = 3
+} BufferIndices;
+
+typedef enum {
+  Position = 0,
+  Normal = 1
+} Attributes;
+
 #endif /* shader_types.h */

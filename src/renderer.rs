@@ -1,8 +1,12 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::model::Model;
 use crate::shader_bindings::{
-    FragementUniforms, Light, LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight,
-    LightType_Sunlight, Uniforms,
+    Attributes_Normal, Attributes_Position,
+    BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
+    BufferIndices_BufferIndexLights as BufferIndexLights,
+    BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
+    LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
+    Uniforms,
 };
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
 use metal::*;
@@ -167,12 +171,12 @@ impl Renderer {
         // render_encoder.set_cull_mode(MTLCullMode::Back);
 
         render_encoder.set_fragment_bytes(
-            3,
+            BufferIndexLights as u64,
             std::mem::size_of::<Light>() as u64 * self.lights.len() as u64,
             self.lights.as_ptr() as *const _,
         );
         render_encoder.set_fragment_bytes(
-            4,
+            BufferIndexFragmentUniforms as u64,
             std::mem::size_of::<FragementUniforms>() as u64,
             self.fragment_uniforms.as_ptr() as *const _,
         );
@@ -182,10 +186,18 @@ impl Renderer {
             self.uniforms[0].normalMatrix =
                 unsafe { std::mem::transmute(Mat3A::from_mat4(model.model_matrix())) };
 
-            render_encoder.set_vertex_buffer(0, Some(&model.vertex_buffer), 0);
-            render_encoder.set_vertex_buffer(1, Some(&model.normal_buffer), 0);
+            render_encoder.set_vertex_buffer(
+                Attributes_Position as u64,
+                Some(&model.vertex_buffer),
+                0,
+            );
+            render_encoder.set_vertex_buffer(
+                Attributes_Normal as u64,
+                Some(&model.normal_buffer),
+                0,
+            );
             render_encoder.set_vertex_bytes(
-                2,
+                BufferIndexUniforms as u64,
                 std::mem::size_of::<Uniforms>() as u64,
                 self.uniforms.as_ptr() as *const _,
             );

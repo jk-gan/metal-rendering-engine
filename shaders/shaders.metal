@@ -4,8 +4,8 @@
 using namespace metal;
 
 struct VertexIn {
-  float4 position [[attribute(0)]];
-  float3 normal [[attribute(1)]];
+  float4 position [[attribute(Position)]];
+  float3 normal [[attribute(Normal)]];
 };
 
 struct VertexOut {
@@ -14,7 +14,7 @@ struct VertexOut {
   float3 worldNormal;
 };
 
-vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &uniforms [[buffer(2)]]) {
+vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &uniforms [[buffer(BufferIndexUniforms)]]) {
   VertexOut out {
     .position = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix * vertexIn.position,
     .worldPosition = (uniforms.modelMatrix * vertexIn.position).xyz,
@@ -24,8 +24,8 @@ vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &
 }
 
 fragment float4 fragment_main(VertexOut in [[stage_in]],
-  constant Light *lights [[buffer(3)]],
-  constant FragementUniforms &fragmentUniforms [[buffer(4)]]) {
+  constant Light *lights [[buffer(BufferIndexLights)]],
+  constant FragementUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]]) {
 
   float3 baseColor = float3(1, 1, 1);
   float3 diffuseColor = 0;
