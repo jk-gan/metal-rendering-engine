@@ -44,7 +44,8 @@ typedef enum {
 
 typedef enum {
   Position = 0,
-  Normal = 1
+  Normal = 1,
+  UV = 2
 } Attributes;
 
 #endif /* shader_types.h */

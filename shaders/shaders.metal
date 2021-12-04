@@ -6,19 +6,22 @@ using namespace metal;
 struct VertexIn {
   float4 position [[attribute(Position)]];
   float3 normal [[attribute(Normal)]];
+  float2 uv [[attribute(UV)]];
 };
 
 struct VertexOut {
   float4 position [[position]];
   float3 worldPosition;
   float3 worldNormal;
+  float2 uv;
 };
 
 vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &uniforms [[buffer(BufferIndexUniforms)]]) {
   VertexOut out {
     .position = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix * vertexIn.position,
     .worldPosition = (uniforms.modelMatrix * vertexIn.position).xyz,
-    .worldNormal = uniforms.normalMatrix * vertexIn.normal
+    .worldNormal = uniforms.normalMatrix * vertexIn.normal,
+    .uv = vertexIn.uv
   };
   return out;
 }

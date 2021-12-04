@@ -1,4 +1,12 @@
 use crate::node::Node;
+use crate::shader_bindings::{
+    Attributes_Normal, Attributes_Position, Attributes_UV,
+    BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
+    BufferIndices_BufferIndexLights as BufferIndexLights,
+    BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
+    LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
+    Uniforms,
+};
 use glam::{Mat4, Vec3};
 use metal::*;
 use std::mem;
@@ -36,8 +44,10 @@ impl Model {
     }
 
     pub fn from_obj_filename(name: &str, device: &Device, library: &Library) -> Model {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("resources/{}", name));
         let (mut models, _materials) = tobj::load_obj(
-            format!("resources/{}", name),
+            path.as_path(),
             // "resources/teapot.obj",
             &tobj::LoadOptions {
                 triangulate: true,
@@ -54,6 +64,7 @@ impl Model {
         let first_model = models.pop().unwrap();
         let mesh = first_model.mesh;
         let vertices = mesh.positions;
+        println!("vertices len: {}", vertices.len());
         let indices = mesh.indices;
         let normals = mesh.normals;
 
@@ -97,6 +108,10 @@ impl Model {
         self.node.rotation = rotation;
     }
 
+    pub fn set_scale(&mut self, scale: Vec3) {
+        self.node.scale = scale;
+    }
+
     pub fn model_matrix(&self) -> Mat4 {
         self.node.model_matrix()
     }
@@ -133,18 +148,23 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
     attribute_0.set_offset(0);
     attribute_0.set_buffer_index(0);
 
-    let offset = mem::size_of::<f32>() as u64 * 3;
-
     let attribute_1 = vertex_descriptor.attributes().object_at(1).unwrap();
     attribute_1.set_format(MTLVertexFormat::Float3);
     attribute_1.set_offset(0);
     attribute_1.set_buffer_index(1);
     // offset += mem::size_of::<f32>() as u64 * 3;
 
+    let attribute_2 = vertex_descriptor.attributes().object_at(2).unwrap();
+    attribute_2.set_format(MTLVertexFormat::Float2);
+    attribute_2.set_offset(0);
+    attribute_2.set_buffer_index(2);
+
     let layout_0 = vertex_descriptor.layouts().object_at(0).unwrap();
-    layout_0.set_stride(offset);
+    layout_0.set_stride(mem::size_of::<f32>() as u64 * 3);
     let layout_1 = vertex_descriptor.layouts().object_at(1).unwrap();
-    layout_1.set_stride(offset);
+    layout_1.set_stride(mem::size_of::<f32>() as u64 * 3);
+    let layout_2 = vertex_descriptor.layouts().object_at(2).unwrap();
+    layout_2.set_stride(mem::size_of::<f32>() as u64 * 2);
 
     vertex_descriptor
 }

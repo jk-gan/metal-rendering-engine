@@ -1,4 +1,5 @@
 mod camera;
+mod lighting;
 mod model;
 mod node;
 mod renderer;
