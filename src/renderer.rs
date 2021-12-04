@@ -1,8 +1,8 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::model::Model;
 use crate::shader_bindings::{
-    FragementUniforms, Light, LightType_Ambientlight, LightType_Pointlight, LightType_Sunlight,
-    Uniforms,
+    FragementUniforms, Light, LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight,
+    LightType_Sunlight, Uniforms,
 };
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
 use metal::*;
@@ -68,10 +68,25 @@ impl Renderer {
             light
         };
 
+        let spotlight = {
+            unsafe {
+                let mut light = Self::build_default_light();
+                light.position = std::mem::transmute(Vec3A::new(0.4, 0.8, 1.0));
+                light.color = std::mem::transmute(Vec3A::new(1.0, 0.0, 1.0));
+                light.attenuation = std::mem::transmute(Vec3A::new(1.0, 0.5, 0.0));
+                light.type_ = LightType_Spotlight;
+                light.coneAngle = 40.0_f32.to_radians();
+                light.coneDirection = std::mem::transmute(Vec3A::new(-2.0, 0.0, -1.5));
+                light.coneAttenuation = 12.0;
+                light
+            }
+        };
+
         let mut lights: Vec<Light> = vec![];
         lights.push(sunlight);
         lights.push(ambient_light);
         // lights.push(red_light);
+        lights.push(spotlight);
 
         let camera_position = camera.position();
 
@@ -202,7 +217,11 @@ impl Renderer {
                 intensity: 1.0,
                 attenuation: std::mem::transmute(Vec3A::new(1.0, 0.0, 0.0)),
                 type_: LightType_Sunlight,
+                coneAngle: 0.0,
+                coneDirection: std::mem::transmute(Vec3A::new(0.0, 0.0, 0.0)),
+                coneAttenuation: 0.0,
                 __bindgen_padding_0: std::mem::zeroed(),
+                __bindgen_padding_1: std::mem::zeroed(),
             }
         }
     }
