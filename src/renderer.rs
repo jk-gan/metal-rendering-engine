@@ -141,33 +141,34 @@ impl Renderer {
             self.uniforms[0].modelMatrix = unsafe { std::mem::transmute(model.model_matrix()) };
             self.uniforms[0].normalMatrix =
                 unsafe { std::mem::transmute(Mat3A::from_mat4(model.model_matrix())) };
-
-            render_encoder.set_vertex_buffer(
-                Attributes_Position as u64,
-                Some(&model.vertex_buffer),
-                0,
-            );
-            render_encoder.set_vertex_buffer(
-                Attributes_Normal as u64,
-                Some(&model.normal_buffer),
-                0,
-            );
             render_encoder.set_vertex_bytes(
                 BufferIndexUniforms as u64,
                 std::mem::size_of::<Uniforms>() as u64,
                 self.uniforms.as_ptr() as *const _,
             );
-
             render_encoder.set_render_pipeline_state(&model.pipeline_state);
 
-            // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
-            render_encoder.draw_indexed_primitives(
-                MTLPrimitiveType::Triangle,
-                model.indices.len() as u64,
-                MTLIndexType::UInt32,
-                &model.index_buffer,
-                0,
-            );
+            for submesh in model.submeshes.iter() {
+                render_encoder.set_vertex_buffer(
+                    Attributes_Position as u64,
+                    Some(&submesh.vertex_buffer),
+                    0,
+                );
+                render_encoder.set_vertex_buffer(
+                    Attributes_Normal as u64,
+                    Some(&submesh.normal_buffer),
+                    0,
+                );
+
+                // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
+                render_encoder.draw_indexed_primitives(
+                    MTLPrimitiveType::Triangle,
+                    submesh.indices.len() as u64,
+                    MTLIndexType::UInt32,
+                    &submesh.index_buffer,
+                    0,
+                );
+            }
         }
 
         render_encoder.end_encoding();

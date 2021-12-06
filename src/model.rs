@@ -1,44 +1,33 @@
-use crate::node::Node;
-use crate::shader_bindings::{
-    Attributes_Normal, Attributes_Position, Attributes_UV,
-    BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
-    BufferIndices_BufferIndexLights as BufferIndexLights,
-    BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
-    LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
-    Uniforms,
-};
+use crate::{node::Node, texturable::Texturable};
 use glam::{Mat4, Vec3};
 use metal::*;
 use std::mem;
 use tobj;
 
-pub struct Model {
-    node: Node,
+pub struct Submesh {
+    // mesh: tobj::Mesh,
     vertices: Vec<f32>,
     pub(crate) indices: Vec<u32>,
     pub(crate) vertex_buffer: Buffer,
     pub(crate) index_buffer: Buffer,
     pub(crate) normal_buffer: Buffer,
+}
+
+pub struct Model {
+    node: Node,
+    pub(crate) submeshes: Vec<Submesh>,
     pub(crate) pipeline_state: RenderPipelineState,
 }
 
 impl Model {
     pub fn new(
         node: Node,
-        vertices: Vec<f32>,
-        indices: Vec<u32>,
-        vertex_buffer: Buffer,
-        index_buffer: Buffer,
-        normal_buffer: Buffer,
+        submeshes: Vec<Submesh>,
         pipeline_state: RenderPipelineState,
     ) -> Model {
         Model {
             node,
-            vertices,
-            indices,
-            vertex_buffer,
-            index_buffer,
-            normal_buffer,
+            submeshes,
             pipeline_state,
         }
     }
@@ -46,9 +35,8 @@ impl Model {
     pub fn from_obj_filename(name: &str, device: &Device, library: &Library) -> Model {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(format!("resources/{}", name));
-        let (mut models, _materials) = tobj::load_obj(
+        let (mut models, materials) = tobj::load_obj(
             path.as_path(),
-            // "resources/teapot.obj",
             &tobj::LoadOptions {
                 triangulate: true,
                 single_index: true,
@@ -61,28 +49,40 @@ impl Model {
         .expect(format!("Failed to load {} file", name).as_str());
 
         // let materials = materials.expect("Failed to load MTL file");
-        let first_model = models.pop().unwrap();
-        let mesh = first_model.mesh;
-        let vertices = mesh.positions;
-        println!("vertices len: {}", vertices.len());
-        let indices = mesh.indices;
-        let normals = mesh.normals;
+        let mut submeshes: Vec<Submesh> = vec![];
 
-        let vertex_buffer = device.new_buffer_with_data(
-            vertices.as_ptr() as *const _,
-            mem::size_of::<f32>() as u64 * vertices.len() as u64,
-            MTLResourceOptions::CPUCacheModeDefaultCache,
-        );
-        let index_buffer = device.new_buffer_with_data(
-            indices.as_ptr() as *const _,
-            mem::size_of::<u32>() as u64 * indices.len() as u64,
-            MTLResourceOptions::CPUCacheModeDefaultCache,
-        );
-        let normal_buffer = device.new_buffer_with_data(
-            normals.as_ptr() as *const _,
-            mem::size_of::<f32>() as u64 * normals.len() as u64,
-            MTLResourceOptions::CPUCacheModeDefaultCache,
-        );
+        for model in models {
+            let mesh = model.mesh;
+            let vertices = mesh.positions;
+            let indices = mesh.indices;
+            let normals = mesh.normals;
+
+            let vertex_buffer = device.new_buffer_with_data(
+                vertices.as_ptr() as *const _,
+                mem::size_of::<f32>() as u64 * vertices.len() as u64,
+                MTLResourceOptions::CPUCacheModeDefaultCache,
+            );
+            let index_buffer = device.new_buffer_with_data(
+                indices.as_ptr() as *const _,
+                mem::size_of::<u32>() as u64 * indices.len() as u64,
+                MTLResourceOptions::CPUCacheModeDefaultCache,
+            );
+            let normal_buffer = device.new_buffer_with_data(
+                normals.as_ptr() as *const _,
+                mem::size_of::<f32>() as u64 * normals.len() as u64,
+                MTLResourceOptions::CPUCacheModeDefaultCache,
+            );
+
+            let submesh = Submesh {
+                vertices,
+                indices,
+                // mesh,
+                vertex_buffer,
+                index_buffer,
+                normal_buffer,
+            };
+            submeshes.push(submesh);
+        }
 
         let pipeline_state = Model::build_pipeline_state(library, device);
 
@@ -91,11 +91,7 @@ impl Model {
 
         Model::new(
             node,
-            vertices,
-            indices,
-            vertex_buffer,
-            index_buffer,
-            normal_buffer,
+            submeshes,
             pipeline_state,
         )
     }

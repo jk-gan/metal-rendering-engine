@@ -17,6 +17,7 @@ impl Lighting {
         };
         let ambient_light = {
             let mut light = Self::build_default_light();
+            light.color = unsafe { std::mem::transmute(Vec3A::new(0.3, 0.3, 0.3)) };
             light.intensity = 0.2;
             light.type_ = LightType_Ambientlight;
             light
