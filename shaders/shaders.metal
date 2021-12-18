@@ -27,15 +27,19 @@ vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &
 }
 
 fragment float4 fragment_main(VertexOut in [[stage_in]],
+  texture2d<float> baseColorTexture [[texture(BaseColorTexture)]],
+  sampler textureSampler [[sampler(0)]], 
   constant Light *lights [[buffer(BufferIndexLights)]],
   constant FragementUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]]) {
 
-  float3 baseColor = float3(1, 1, 1);
+  float3 baseColor = baseColorTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).rgb;
   float3 diffuseColor = 0;
   float3 ambientColor = 0;
   float3 specularColor = 0;
   float materialShininess = 32;
   float3 materialSpecularColor = float3(1, 1, 1);
+
+  return float4(baseColor, 1);
 
   float3 normalDirection = normalize(in.worldNormal);
   for (unsigned int i = 0; i < fragmentUniforms.lightCount; i++) {

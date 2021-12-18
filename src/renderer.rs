@@ -1,11 +1,11 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::shader_bindings::{
-    Attributes_Normal, Attributes_Position,
+    Attributes_Normal, Attributes_Position, Attributes_UV,
     BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
     BufferIndices_BufferIndexLights as BufferIndexLights,
     BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
     LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
-    Uniforms,
+    Textures_BaseColorTexture, Uniforms,
 };
 use crate::{lighting::Lighting, model::Model};
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
@@ -35,11 +35,36 @@ impl Renderer {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let mut model = Model::from_obj_filename("HepBurn_Sofa.obj", &device, &library);
+        // Sofa
+        // let mut model = Model::from_obj_filename("HepBurn_Sofa.obj", &device, &library);
+        // model.set_position(Vec3::new(0.0, 0.0, 0.0));
+        // model.set_rotation(Vec3::new(0.0, 180.0_f32.to_radians(), 0.0));
+        // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
+
+        let mut model = Model::from_obj_filename("lowpoly-house.obj", 1, &device, &library);
+        // let mut model = Model::from_obj_filename("train.obj", &device, &library);
+        // let mut model = Model::from_obj_filename("viking_room.obj", &device, &library);
         model.set_position(Vec3::new(0.0, 0.0, 0.0));
-        model.set_rotation(Vec3::new(0.0, 180.0_f32.to_radians(), 0.0));
-        model.set_scale(Vec3::new(0.001, 0.001, 0.001));
-        let models = vec![model];
+        model.set_rotation(Vec3::new(0.0, 45.0_f32.to_radians(), 0.0));
+        // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
+
+        let mut ground = Model::from_obj_filename("plane.obj", 16, &device, &library);
+        ground.set_scale(Vec3::new(40.0, 40.0, 40.0));
+
+        let models = vec![model, ground];
+
+        // generate mipmaps
+        for model in models.iter() {
+            for submesh in model.submeshes.iter() {
+                if let Some(textures) = &submesh.textures {
+                    let command_buffer = command_queue.new_command_buffer();
+                    let blit_command_encoder = command_buffer.new_blit_command_encoder();
+                    blit_command_encoder.generate_mipmaps(&textures.diffuse_texture);
+                    blit_command_encoder.end_encoding();
+                    command_buffer.commit();
+                }
+            }
+        }
 
         let uniforms = Uniforms {
             modelMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
@@ -63,6 +88,7 @@ impl Renderer {
                     camera_position.z,
                 ))
             },
+            tiling: 1,
             __bindgen_padding_0: unsafe { std::mem::zeroed() },
         };
 
@@ -131,11 +157,6 @@ impl Renderer {
             std::mem::size_of::<Light>() as u64 * self.lighting.count as u64,
             self.lighting.lights.as_ptr() as *const _,
         );
-        render_encoder.set_fragment_bytes(
-            BufferIndexFragmentUniforms as u64,
-            std::mem::size_of::<FragementUniforms>() as u64,
-            self.fragment_uniforms.as_ptr() as *const _,
-        );
 
         for model in self.models.iter() {
             self.uniforms[0].modelMatrix = unsafe { std::mem::transmute(model.model_matrix()) };
@@ -148,6 +169,15 @@ impl Renderer {
             );
             render_encoder.set_render_pipeline_state(&model.pipeline_state);
 
+            self.fragment_uniforms[0].tiling = model.tiling;
+            render_encoder.set_fragment_bytes(
+                BufferIndexFragmentUniforms as u64,
+                std::mem::size_of::<FragementUniforms>() as u64,
+                self.fragment_uniforms.as_ptr() as *const _,
+            );
+
+            render_encoder.set_fragment_sampler_state(0, Some(&model.sampler_state));
+
             for submesh in model.submeshes.iter() {
                 render_encoder.set_vertex_buffer(
                     Attributes_Position as u64,
@@ -159,6 +189,18 @@ impl Renderer {
                     Some(&submesh.normal_buffer),
                     0,
                 );
+                render_encoder.set_vertex_buffer(
+                    Attributes_UV as u64,
+                    Some(&submesh.text_coords_buffer),
+                    0,
+                );
+
+                if let Some(textures) = &submesh.textures {
+                    render_encoder.set_fragment_texture(
+                        Textures_BaseColorTexture as u64,
+                        Some(&textures.diffuse_texture),
+                    );
+                }
 
                 // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
                 render_encoder.draw_indexed_primitives(
