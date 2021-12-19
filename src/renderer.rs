@@ -3,7 +3,8 @@ use crate::shader_bindings::{
     Attributes_Normal, Attributes_Position, Attributes_UV,
     BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
     BufferIndices_BufferIndexLights as BufferIndexLights,
-    BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
+    BufferIndices_BufferIndexUniforms as BufferIndexUniforms,
+    BufferIndices_BufferIndexVertices as BufferIndexVertices, FragementUniforms, Light,
     LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
     Textures_BaseColorTexture, Textures_NormalTexture, Uniforms,
 };
@@ -197,18 +198,8 @@ impl Renderer {
                 render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
 
                 render_encoder.set_vertex_buffer(
-                    Attributes_Position as u64,
+                    BufferIndexVertices as u64,
                     Some(&submesh.vertex_buffer),
-                    0,
-                );
-                render_encoder.set_vertex_buffer(
-                    Attributes_Normal as u64,
-                    Some(&submesh.normal_buffer),
-                    0,
-                );
-                render_encoder.set_vertex_buffer(
-                    Attributes_UV as u64,
-                    Some(&submesh.text_coords_buffer),
                     0,
                 );
 
@@ -231,7 +222,7 @@ impl Renderer {
                 // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
                 render_encoder.draw_indexed_primitives(
                     MTLPrimitiveType::Triangle,
-                    submesh.indices.len() as u64,
+                    submesh.num_elements,
                     MTLIndexType::UInt32,
                     &submesh.index_buffer,
                     0,
