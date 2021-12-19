@@ -39,14 +39,16 @@ typedef struct {
 typedef enum {
   BufferIndexVertices = 0,
   BufferIndexLights = 1,
-  BufferIndexUniforms = 3,
-  BufferIndexFragmentUniforms = 4
+  BufferIndexUniforms = 2,
+  BufferIndexFragmentUniforms = 3
 } BufferIndices;
 
 typedef enum {
   Position = 0,
   Normal = 1,
-  UV = 2
+  UV = 2,
+  Tangent = 3,
+  Bitangent = 4
 } Attributes;
 
 typedef enum {

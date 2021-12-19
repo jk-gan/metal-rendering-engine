@@ -1,6 +1,5 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::shader_bindings::{
-    Attributes_Normal, Attributes_Position, Attributes_UV,
     BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
     BufferIndices_BufferIndexLights as BufferIndexLights,
     BufferIndices_BufferIndexUniforms as BufferIndexUniforms,

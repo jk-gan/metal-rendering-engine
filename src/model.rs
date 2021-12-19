@@ -1,18 +1,21 @@
 use crate::shader_bindings::{
-    Attributes_Normal, Attributes_Position, Attributes_UV,
-    BufferIndices_BufferIndexVertices as BufferIndexVertices,
+    Attributes_Bitangent, Attributes_Normal, Attributes_Position, Attributes_Tangent,
+    Attributes_UV, BufferIndices_BufferIndexVertices as BufferIndexVertices,
 };
 use crate::{node::Node, texturable::Texturable};
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use gltf::Gltf;
 use metal::*;
 use std::mem;
 use tobj;
 
+#[derive(Debug, Copy, Clone)]
 pub struct ModelVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3],
     pub text_coords: [f32; 2],
+    pub tangent: [f32; 3],
+    pub bitangent: [f32; 3],
 }
 
 pub struct Submesh {
@@ -210,7 +213,6 @@ impl Model {
         let mut submeshes: Vec<Submesh> = vec![];
 
         for model in models {
-            let indices = model.mesh.indices;
             let mut material = None;
             if let Some(id) = model.mesh.material_id {
                 material = match materials {
@@ -233,7 +235,74 @@ impl Model {
                         model.mesh.normals[i * 3 + 2],
                     ],
                     text_coords: [model.mesh.texcoords[i * 2], model.mesh.texcoords[i * 2 + 1]],
+                    tangent: [0.0; 3],
+                    bitangent: [0.0; 3],
                 });
+            }
+
+            let indices = &model.mesh.indices;
+            let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
+            // Calculate tangents and bitangets. We're going to
+            // use the triangles, so we need to loop through the
+            // indices in chunks of 3
+            for c in indices.chunks(3) {
+                let v0 = vertices[c[0] as usize];
+                let v1 = vertices[c[1] as usize];
+                let v2 = vertices[c[2] as usize];
+
+                let pos0: Vec3 = v0.position.into();
+                let pos1: Vec3 = v1.position.into();
+                let pos2: Vec3 = v2.position.into();
+
+                let uv0: Vec2 = v0.text_coords.into();
+                let uv1: Vec2 = v1.text_coords.into();
+                let uv2: Vec2 = v2.text_coords.into();
+
+                // Calculate the edges of the triangle
+                let delta_pos1 = pos1 - pos0;
+                let delta_pos2 = pos2 - pos0;
+
+                // This will give us a direction to calculate the
+                // tangent and bitangent
+                let delta_uv1 = uv1 - uv0;
+                let delta_uv2 = uv2 - uv0;
+
+                // Solving the following system of equations will
+                // give us the tangent and bitangent.
+                //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+                //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+                // Luckily, the place I found this equation provided
+                // the solution!
+                let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+                let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+                let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+
+                // We'll use the same tangent/bitangent for each vertex in the triangle
+                vertices[c[0] as usize].tangent =
+                    (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
+                vertices[c[1] as usize].tangent =
+                    (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
+                vertices[c[2] as usize].tangent =
+                    (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
+                vertices[c[0] as usize].bitangent =
+                    (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
+                vertices[c[1] as usize].bitangent =
+                    (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
+                vertices[c[2] as usize].bitangent =
+                    (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
+
+                // Used to average the tangents/bitangents
+                triangles_included[c[0] as usize] += 1;
+                triangles_included[c[1] as usize] += 1;
+                triangles_included[c[2] as usize] += 1;
+            }
+
+            // Average the tangents/bitangents
+            for (i, n) in triangles_included.into_iter().enumerate() {
+                let denom = 1.0 / n as f32;
+                let mut v = &mut vertices[i];
+                v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
+                v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
             }
 
             let vertex_buffer = device.new_buffer_with_data(
@@ -510,6 +579,26 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
     attribute_2.set_buffer_index(BufferIndexVertices as u64);
 
     offset += mem::size_of::<f32>() as u64 * 2;
+
+    let attribute_3 = vertex_descriptor
+        .attributes()
+        .object_at(Attributes_Tangent as u64)
+        .unwrap();
+    attribute_3.set_format(MTLVertexFormat::Float3);
+    attribute_3.set_offset(offset);
+    attribute_3.set_buffer_index(BufferIndexVertices as u64);
+
+    offset += mem::size_of::<f32>() as u64 * 3;
+
+    let attribute_4 = vertex_descriptor
+        .attributes()
+        .object_at(Attributes_Bitangent as u64)
+        .unwrap();
+    attribute_4.set_format(MTLVertexFormat::Float3);
+    attribute_4.set_offset(offset);
+    attribute_4.set_buffer_index(BufferIndexVertices as u64);
+
+    offset += mem::size_of::<f32>() as u64 * 3;
 
     let layout_0 = vertex_descriptor.layouts().object_at(0).unwrap();
     layout_0.set_stride(offset);
