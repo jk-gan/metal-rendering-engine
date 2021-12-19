@@ -159,7 +159,7 @@ impl CameraFunction for ArcballCamera {
 
         let mut rotation = Vec3::new(self.rotation().x, self.rotation().y, self.rotation().z);
         rotation.y += delta.0 * sensitivity;
-        rotation.x += delta.1 * sensitivity;
+        rotation.x -= delta.1 * sensitivity;
         rotation.x = f32::max(
             -std::f32::consts::PI / 2.0,
             f32::min(rotation.x, std::f32::consts::PI / 2.0),

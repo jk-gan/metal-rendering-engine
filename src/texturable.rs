@@ -8,6 +8,10 @@ use std::fs::File;
 
 pub trait Texturable {
     fn load_texture(image_name: &str, device: &Device) -> ImageResult<Texture> {
+        let image_name = match image_name.contains(".png") {
+            true => image_name.to_string(),
+            false => format!("{}.png", image_name),
+        };
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join(format!("resources/{}", image_name));
 

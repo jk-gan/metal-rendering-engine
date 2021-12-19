@@ -28,18 +28,21 @@ vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &
 
 fragment float4 fragment_main(VertexOut in [[stage_in]],
   texture2d<float> baseColorTexture [[texture(BaseColorTexture)]],
+  texture2d<float> normalTexture [[texture(NormalTexture)]],
   sampler textureSampler [[sampler(0)]], 
   constant Light *lights [[buffer(BufferIndexLights)]],
   constant FragementUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]]) {
 
   float3 baseColor = baseColorTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).rgb;
+  float3 normalValue = normalTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).xyz;
+
+  normalValue = normalize(normalValue);
+
   float3 diffuseColor = 0;
   float3 ambientColor = 0;
   float3 specularColor = 0;
-  float materialShininess = 32;
-  float3 materialSpecularColor = float3(1, 1, 1);
-
-  return float4(baseColor, 1);
+  float materialShininess = 64;
+  float3 materialSpecularColor = float3(0.4, 0.4, 0.4);
 
   float3 normalDirection = normalize(in.worldNormal);
   for (unsigned int i = 0; i < fragmentUniforms.lightCount; i++) {
@@ -82,7 +85,7 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     }
   }
 
-  float3 color = diffuseColor + ambientColor + specularColor;
+  float3 color = saturate(diffuseColor + ambientColor + specularColor);
   // float3 color = diffuseColor + ambientColor;
   return float4(color, 1);
 }

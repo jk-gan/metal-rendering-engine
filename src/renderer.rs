@@ -5,7 +5,7 @@ use crate::shader_bindings::{
     BufferIndices_BufferIndexLights as BufferIndexLights,
     BufferIndices_BufferIndexUniforms as BufferIndexUniforms, FragementUniforms, Light,
     LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
-    Textures_BaseColorTexture, Uniforms,
+    Textures_BaseColorTexture, Textures_NormalTexture, Uniforms,
 };
 use crate::{lighting::Lighting, model::Model};
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
@@ -28,7 +28,7 @@ impl Renderer {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
-        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 1.2, 0.0), 4.3);
+        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 2.2, 0.0), 6.0);
         camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
 
         let library_path =
@@ -41,27 +41,36 @@ impl Renderer {
         // model.set_rotation(Vec3::new(0.0, 180.0_f32.to_radians(), 0.0));
         // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
 
-        let mut model = Model::from_obj_filename("lowpoly-house.obj", 1, &device, &library);
+        // let mut model = Model::from_obj_filename("lowpoly-house.obj", 1, &device, &library);
+        // model.set_position(Vec3::new(0.0, 0.0, 0.0));
+        // model.set_rotation(Vec3::new(0.0, 45.0_f32.to_radians(), 0.0));
+
         // let mut model = Model::from_obj_filename("train.obj", &device, &library);
         // let mut model = Model::from_obj_filename("viking_room.obj", &device, &library);
-        model.set_position(Vec3::new(0.0, 0.0, 0.0));
-        model.set_rotation(Vec3::new(0.0, 45.0_f32.to_radians(), 0.0));
         // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
 
-        let mut ground = Model::from_obj_filename("plane.obj", 16, &device, &library);
-        ground.set_scale(Vec3::new(40.0, 40.0, 40.0));
+        // let mut ground = Model::from_obj_filename("plane.obj", 16, &device, &library);
+        // ground.set_scale(Vec3::new(40.0, 40.0, 40.0));
 
-        let models = vec![model, ground];
+        let mut house = Model::from_obj_filename("cottage1.obj", 1, &device, &library);
+        house.set_position(Vec3::new(0.0, 0.0, 0.0));
+        house.set_rotation(Vec3::new(0.0, 50.0_f32.to_radians(), 0.0));
+
+        // let adam_head = Model::from_gltf_filename("adamHead/adamHead.gltf", 1, &device, &library);
+
+        let models = vec![house];
 
         // generate mipmaps
         for model in models.iter() {
             for submesh in model.submeshes.iter() {
                 if let Some(textures) = &submesh.textures {
-                    let command_buffer = command_queue.new_command_buffer();
-                    let blit_command_encoder = command_buffer.new_blit_command_encoder();
-                    blit_command_encoder.generate_mipmaps(&textures.diffuse_texture);
-                    blit_command_encoder.end_encoding();
-                    command_buffer.commit();
+                    if let Some(texture) = &textures.diffuse_texture {
+                        let command_buffer = command_queue.new_command_buffer();
+                        let blit_command_encoder = command_buffer.new_blit_command_encoder();
+                        blit_command_encoder.generate_mipmaps(&texture);
+                        blit_command_encoder.end_encoding();
+                        command_buffer.commit();
+                    }
                 }
             }
         }
@@ -128,7 +137,7 @@ impl Renderer {
         color_attachment.set_texture(Some(&drawable.texture()));
         color_attachment.set_load_action(MTLLoadAction::Clear);
         // color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-        color_attachment.set_clear_color(MTLClearColor::new(0.7, 0.9, 1.0, 1.0));
+        color_attachment.set_clear_color(MTLClearColor::new(0.93, 0.97, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
 
         let depth_buffer_descriptor = TextureDescriptor::new();
@@ -147,6 +156,13 @@ impl Renderer {
         self.uniforms[0].projectionMatrix =
             unsafe { std::mem::transmute(*self.camera.projection_matrix()) };
         self.uniforms[0].viewMatrix = unsafe { std::mem::transmute(*self.camera.view_matrix()) };
+        self.fragment_uniforms[0].cameraPosition = unsafe {
+            std::mem::transmute(Vec3A::new(
+                self.camera.position().x,
+                self.camera.position().y,
+                self.camera.position().z,
+            ))
+        };
 
         let command_buffer = self.command_queue.new_command_buffer();
         let render_encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor);
@@ -167,7 +183,6 @@ impl Renderer {
                 std::mem::size_of::<Uniforms>() as u64,
                 self.uniforms.as_ptr() as *const _,
             );
-            render_encoder.set_render_pipeline_state(&model.pipeline_state);
 
             self.fragment_uniforms[0].tiling = model.tiling;
             render_encoder.set_fragment_bytes(
@@ -179,6 +194,8 @@ impl Renderer {
             render_encoder.set_fragment_sampler_state(0, Some(&model.sampler_state));
 
             for submesh in model.submeshes.iter() {
+                render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
+
                 render_encoder.set_vertex_buffer(
                     Attributes_Position as u64,
                     Some(&submesh.vertex_buffer),
@@ -196,10 +213,19 @@ impl Renderer {
                 );
 
                 if let Some(textures) = &submesh.textures {
-                    render_encoder.set_fragment_texture(
-                        Textures_BaseColorTexture as u64,
-                        Some(&textures.diffuse_texture),
-                    );
+                    if let Some(diffuse_texture) = &textures.diffuse_texture {
+                        render_encoder.set_fragment_texture(
+                            Textures_BaseColorTexture as u64,
+                            Some(&diffuse_texture),
+                        );
+                    }
+
+                    if let Some(normal_texture) = &textures.normal_texture {
+                        render_encoder.set_fragment_texture(
+                            Textures_NormalTexture as u64,
+                            Some(&normal_texture),
+                        );
+                    }
                 }
 
                 // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
@@ -217,24 +243,6 @@ impl Renderer {
 
         command_buffer.present_drawable(&drawable);
         command_buffer.commit();
-    }
-
-    fn build_default_light() -> Light {
-        unsafe {
-            Light {
-                position: std::mem::transmute(Vec3A::new(0.0, 0.0, 0.0)),
-                color: std::mem::transmute(Vec3A::new(1.0, 1.0, 1.0)),
-                specularColor: std::mem::transmute(Vec3A::new(0.6, 0.6, 0.6)),
-                intensity: 1.0,
-                attenuation: std::mem::transmute(Vec3A::new(1.0, 0.0, 0.0)),
-                type_: LightType_Sunlight,
-                coneAngle: 0.0,
-                coneDirection: std::mem::transmute(Vec3A::new(0.0, 0.0, 0.0)),
-                coneAttenuation: 0.0,
-                __bindgen_padding_0: std::mem::zeroed(),
-                __bindgen_padding_1: std::mem::zeroed(),
-            }
-        }
     }
 
     fn build_depth_stencil_state(device: &Device) -> DepthStencilState {

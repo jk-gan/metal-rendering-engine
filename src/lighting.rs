@@ -12,13 +12,13 @@ impl Lighting {
     pub fn new() -> Lighting {
         let sunlight = {
             let mut light = Self::build_default_light();
-            light.position = unsafe { std::mem::transmute(Vec3A::new(0.4, 1.5, -2.0)) };
+            light.position = unsafe { std::mem::transmute(Vec3A::new(0.4, 1.0, -2.0)) };
             light
         };
         let ambient_light = {
             let mut light = Self::build_default_light();
-            light.color = unsafe { std::mem::transmute(Vec3A::new(0.3, 0.3, 0.3)) };
-            light.intensity = 0.2;
+            light.color = unsafe { std::mem::transmute(Vec3A::new(1.0, 1.0, 1.0)) };
+            light.intensity = 0.1;
             light.type_ = LightType_Ambientlight;
             light
         };
