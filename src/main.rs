@@ -8,8 +8,8 @@ use winit::platform::macos::WindowExtMacOS;
 use winit::{
     dpi::LogicalSize,
     event::{
-        DeviceEvent, ElementState, Event, KeyboardInput, MouseScrollDelta, VirtualKeyCode,
-        WindowEvent,
+        DeviceEvent, ElementState, Event, KeyboardInput, MouseButton, MouseScrollDelta,
+        VirtualKeyCode, WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
@@ -90,13 +90,13 @@ fn main() {
                         ));
                         renderer.resize(new_inner_size.width, new_inner_size.height);
                     }
-                    // WindowEvent::MouseInput {
-                    //     state,
-                    //     button: MouseButton::Right,
-                    //     ..
-                    // } => {
-                    //     program_state.left_mouse_pressed = *state == ElementState::Pressed;
-                    // }
+                    WindowEvent::MouseInput {
+                        state,
+                        button: MouseButton::Left,
+                        ..
+                    } => {
+                        program_state.left_mouse_pressed = *state == ElementState::Pressed;
+                    }
                     _ => {}
                 },
                 Event::DeviceEvent { ref event, .. } => match event {
@@ -106,12 +106,12 @@ fn main() {
                         }
                         MouseScrollDelta::PixelDelta(_) => {}
                     },
-                    DeviceEvent::Button {
-                        button: 0, // right mouse button
-                        state,
-                    } => {
-                        program_state.left_mouse_pressed = *state == ElementState::Pressed;
-                    }
+                    // DeviceEvent::Button {
+                    //     button: 0, // right mouse button
+                    //     state,
+                    // } => {
+                    //     program_state.left_mouse_pressed = *state == ElementState::Pressed;
+                    // }
                     DeviceEvent::MouseMotion { delta } => {
                         if program_state.left_mouse_pressed {
                             renderer.rotate(*delta);

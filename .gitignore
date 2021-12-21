@@ -5,3 +5,5 @@
 *.air
 *.metallib
 shader_types_hash
+
+tmux-*
