@@ -1,11 +1,6 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::shader_bindings::{
-    BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
-    BufferIndices_BufferIndexLights as BufferIndexLights,
-    BufferIndices_BufferIndexUniforms as BufferIndexUniforms,
-    BufferIndices_BufferIndexVertices as BufferIndexVertices, FragementUniforms, Light,
-    LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
-    Textures_BaseColorTexture, Textures_NormalTexture, Uniforms,
+    BufferIndices_BufferIndexLights as BufferIndexLights, FragmentUniforms, Light, Uniforms,
 };
 use crate::{lighting::Lighting, model::Model};
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
@@ -16,7 +11,7 @@ pub struct Renderer {
     command_queue: CommandQueue,
     library: Library,
     uniforms: [Uniforms; 1],
-    fragment_uniforms: [FragementUniforms; 1],
+    fragment_uniforms: [FragmentUniforms; 1],
     camera: ArcballCamera,
     models: Vec<Model>,
     depth_stencil_state: DepthStencilState,
@@ -28,11 +23,13 @@ impl Renderer {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
-        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 2.2, 0.0), 6.0);
+        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.0, 0.0), 2.5);
         camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
 
+        // let library_path =
+        //     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
         let library_path =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
         // Sofa
@@ -52,25 +49,39 @@ impl Renderer {
         // let mut ground = Model::from_obj_filename("plane.obj", 16, &device, &library);
         // ground.set_scale(Vec3::new(40.0, 40.0, 40.0));
 
-        let mut house = Model::from_obj_filename("cottage1.obj", 1, &device, &library);
-        house.set_position(Vec3::new(0.0, 0.0, 0.0));
-        house.set_rotation(Vec3::new(0.0, 50.0_f32.to_radians(), 0.0));
+        // let mut house = Model::from_obj_filename("cottage2.obj", 1, &device, &library);
+        // house.set_position(Vec3::new(0.0, 0.0, 0.0));
+        // house.set_rotation(Vec3::new(0.0, 50.0_f32.to_radians(), 0.0));
 
-        // let adam_head = Model::from_gltf_filename("adamHead/adamHead.gltf", 1, &device, &library);
+        let mut damaged_helmet =
+            Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
+        damaged_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
+        damaged_helmet.set_rotation(Vec3::new(
+            280.0_f32.to_radians(),
+            180.0_f32.to_radians(),
+            300.0_f32.to_radians(),
+        ));
 
-        let models = vec![house];
+        // let mut flight_helmet =
+        //     Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);
+        // flight_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
+        // flight_helmet.set_rotation(Vec3::new(
+        //     280.0_f32.to_radians(),
+        //     270.0_f32.to_radians(),
+        //     300.0_f32.to_radians(),
+        // ));
+
+        let models = vec![damaged_helmet];
 
         // generate mipmaps
         for model in models.iter() {
             for submesh in model.submeshes.iter() {
-                if let Some(textures) = &submesh.textures {
-                    if let Some(texture) = &textures.diffuse_texture {
-                        let command_buffer = command_queue.new_command_buffer();
-                        let blit_command_encoder = command_buffer.new_blit_command_encoder();
-                        blit_command_encoder.generate_mipmaps(&texture);
-                        blit_command_encoder.end_encoding();
-                        command_buffer.commit();
-                    }
+                if let Some(texture) = &submesh.textures.diffuse_texture {
+                    let command_buffer = command_queue.new_command_buffer();
+                    let blit_command_encoder = command_buffer.new_blit_command_encoder();
+                    blit_command_encoder.generate_mipmaps(&texture);
+                    blit_command_encoder.end_encoding();
+                    command_buffer.commit();
                 }
             }
         }
@@ -88,7 +99,7 @@ impl Renderer {
 
         let camera_position = camera.position();
 
-        let fragment_uniforms = FragementUniforms {
+        let fragment_uniforms = FragmentUniforms {
             lightCount: lighting.count,
             cameraPosition: unsafe {
                 std::mem::transmute(Vec3A::new(
@@ -175,58 +186,13 @@ impl Renderer {
         );
 
         for model in self.models.iter() {
-            self.uniforms[0].modelMatrix = unsafe { std::mem::transmute(model.model_matrix()) };
-            self.uniforms[0].normalMatrix =
-                unsafe { std::mem::transmute(Mat3A::from_mat4(model.model_matrix())) };
-            render_encoder.set_vertex_bytes(
-                BufferIndexUniforms as u64,
-                std::mem::size_of::<Uniforms>() as u64,
-                self.uniforms.as_ptr() as *const _,
+            render_encoder.push_debug_group(&model.name());
+            model.render(
+                &render_encoder,
+                &mut self.uniforms,
+                &mut self.fragment_uniforms,
             );
-
-            self.fragment_uniforms[0].tiling = model.tiling;
-            render_encoder.set_fragment_bytes(
-                BufferIndexFragmentUniforms as u64,
-                std::mem::size_of::<FragementUniforms>() as u64,
-                self.fragment_uniforms.as_ptr() as *const _,
-            );
-
-            render_encoder.set_fragment_sampler_state(0, Some(&model.sampler_state));
-
-            for submesh in model.submeshes.iter() {
-                render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
-
-                render_encoder.set_vertex_buffer(
-                    BufferIndexVertices as u64,
-                    Some(&submesh.vertex_buffer),
-                    0,
-                );
-
-                if let Some(textures) = &submesh.textures {
-                    if let Some(diffuse_texture) = &textures.diffuse_texture {
-                        render_encoder.set_fragment_texture(
-                            Textures_BaseColorTexture as u64,
-                            Some(&diffuse_texture),
-                        );
-                    }
-
-                    if let Some(normal_texture) = &textures.normal_texture {
-                        render_encoder.set_fragment_texture(
-                            Textures_NormalTexture as u64,
-                            Some(&normal_texture),
-                        );
-                    }
-                }
-
-                // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
-                render_encoder.draw_indexed_primitives(
-                    MTLPrimitiveType::Triangle,
-                    submesh.num_elements,
-                    MTLIndexType::UInt32,
-                    &submesh.index_buffer,
-                    0,
-                );
-            }
+            render_encoder.pop_debug_group();
         }
 
         render_encoder.end_encoding();

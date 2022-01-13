@@ -3,6 +3,9 @@
 
 using namespace metal;
 
+constant bool hasColorTexture [[function_constant(0)]];
+constant bool hasNormalTexture [[function_constant(1)]];
+
 struct VertexIn {
   float4 position [[attribute(Position)]];
   float3 normal [[attribute(Normal)]];
@@ -33,23 +36,36 @@ vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &
 }
 
 fragment float4 fragment_main(VertexOut in [[stage_in]],
-  texture2d<float> baseColorTexture [[texture(BaseColorTexture)]],
-  texture2d<float> normalTexture [[texture(NormalTexture)]],
+  constant Material &material [[buffer(BufferIndexMaterials)]],
+  texture2d<float> baseColorTexture [[texture(BaseColorTexture), function_constant(hasColorTexture)]],
+  texture2d<float> normalTexture [[texture(NormalTexture), function_constant(hasNormalTexture)]],
   sampler textureSampler [[sampler(0)]], 
   constant Light *lights [[buffer(BufferIndexLights)]],
-  constant FragementUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]]) {
+  constant FragmentUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]]) {
 
-  float3 baseColor = baseColorTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).rgb;
-  float3 normalValue = normalTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).xyz;
-  normalValue = normalValue * 2 - 1;
-
+  // float3 baseColor = baseColorTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).rgb;
+  float3 baseColor;
+  if (hasColorTexture) {
+    baseColor = baseColorTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).rgb;
+  } else {
+    baseColor = material.baseColor;
+  }
+  float3 normalValue;
+  if (hasNormalTexture) {
+    normalValue = normalTexture.sample(textureSampler, in.uv * fragmentUniforms.tiling).xyz;
+    normalValue = normalValue * 2 - 1;
+  } else {
+    normalValue = in.worldNormal;
+  }
   normalValue = normalize(normalValue);
 
   float3 diffuseColor = 0;
   float3 ambientColor = 0;
   float3 specularColor = 0;
-  float materialShininess = 64;
-  float3 materialSpecularColor = float3(0.4, 0.4, 0.4);
+  // float materialShininess = 64;
+  // float3 materialSpecularColor = float3(0.4, 0.4, 0.4);
+  float3 materialSpecularColor = material.specularColor;
+  float materialShininess = material.shininess;
 
   // float3 normalDirection = normalize(in.worldNormal);
   float3 normalDirection = float3x3(in.worldTangent, in.worldBitangent, in.worldNormal) * normalValue;

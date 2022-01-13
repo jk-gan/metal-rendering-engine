@@ -34,13 +34,14 @@ typedef struct {
   unsigned int lightCount;
   vector_float3 cameraPosition;
   unsigned int tiling;
-} FragementUniforms;
+} FragmentUniforms;
 
 typedef enum {
   BufferIndexVertices = 0,
   BufferIndexLights = 1,
   BufferIndexUniforms = 2,
-  BufferIndexFragmentUniforms = 3
+  BufferIndexFragmentUniforms = 3,
+  BufferIndexMaterials = 14
 } BufferIndices;
 
 typedef enum {
@@ -53,7 +54,19 @@ typedef enum {
 
 typedef enum {
   BaseColorTexture = 0,
-  NormalTexture = 1
+  NormalTexture = 1,
+  MetallicRoughnessTexture = 2,
+  OcclusionTexture = 3,
+  EmissiveTexture = 4
 } Textures;
+
+typedef struct {
+  vector_float4 baseColor;
+  vector_float4 specularColor;
+  float roughness;
+  float metallic;
+  // vector_float3 ambientOcclusion;
+  float shininess;
+} Material;
 
 #endif /* shader_types.h */

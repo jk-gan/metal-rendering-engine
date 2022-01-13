@@ -1,13 +1,19 @@
 use crate::shader_bindings::{
     Attributes_Bitangent, Attributes_Normal, Attributes_Position, Attributes_Tangent,
-    Attributes_UV, BufferIndices_BufferIndexVertices as BufferIndexVertices,
+    Attributes_UV, BufferIndices_BufferIndexFragmentUniforms as BufferIndexFragmentUniforms,
+    BufferIndices_BufferIndexMaterials as BufferIndexMaterials,
+    BufferIndices_BufferIndexUniforms as BufferIndexUniforms,
+    BufferIndices_BufferIndexVertices as BufferIndexVertices, FragmentUniforms, Material,
+    Textures_BaseColorTexture, Textures_EmissiveTexture, Textures_MetallicRoughnessTexture,
+    Textures_NormalTexture, Textures_OcclusionTexture, Uniforms,
 };
 use crate::{node::Node, texturable::Texturable};
-use glam::{Mat4, Vec2, Vec3};
-use gltf::Gltf;
+use glam::{Mat3A, Mat4, Vec2, Vec3, Vec4};
 use metal::*;
 use std::mem;
 use tobj;
+
+const TEXTURE_PATH: &str = "DamagedHelmet";
 
 #[derive(Debug, Copy, Clone)]
 pub struct ModelVertex {
@@ -18,14 +24,51 @@ pub struct ModelVertex {
     pub bitangent: [f32; 3],
 }
 
+impl Default for ModelVertex {
+    fn default() -> Self {
+        ModelVertex {
+            position: [0.0; 3],
+            normal: [0.0; 3],
+            text_coords: [0.0; 2],
+            tangent: [0.0; 3],
+            bitangent: [0.0; 3],
+        }
+    }
+}
+
+impl Material {
+    pub fn new(
+        base_color: [f32; 4],
+        specular_color: [f32; 4],
+        shininess: f32,
+        roughness: f32,
+        metallic: f32,
+    ) -> Self {
+        unsafe {
+            Self {
+                baseColor: std::mem::transmute(Vec4::from(base_color)),
+                specularColor: std::mem::transmute(Vec4::from(specular_color)),
+                shininess: std::mem::transmute(shininess),
+                roughness: std::mem::transmute(roughness),
+                metallic: std::mem::transmute(metallic),
+            }
+        }
+    }
+}
+
+impl Default for Material {
+    fn default() -> Self {
+        Self::new([1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0], 32.0, 0.0, 0.0)
+    }
+}
+
 pub struct Submesh {
-    // mesh: tobj::Mesh,
-    // pub(crate) material: Option<tobj::Material>,
     pub(crate) vertex_buffer: Buffer,
     pub(crate) index_buffer: Buffer,
     pub(crate) num_elements: u64,
-    pub(crate) textures: Option<Textures>,
+    pub(crate) textures: Textures,
     pub(crate) pipeline_state: RenderPipelineState,
+    pub(crate) material: [Material; 1],
 }
 
 impl Submesh {
@@ -37,14 +80,14 @@ impl Submesh {
         index_buffer: Buffer,
         num_elements: u64,
     ) -> Self {
-        let textures = match material {
+        let (textures, pbr_material) = match material {
             Some(ref material) => {
                 let diffuse_texture = match &material.diffuse_texture {
                     x if x.is_empty() => None,
                     filename => {
                         println!("diffuse_texture_filename: {}", filename);
-                        let diffuse_texture =
-                            Self::load_texture(filename, &device).expect("Unable to load texture");
+                        let diffuse_texture = Self::load_texture(filename, &device)
+                            .expect("Unable to load diffuse texture");
                         Some(diffuse_texture)
                     }
                 };
@@ -52,20 +95,33 @@ impl Submesh {
                 let normal_texture = match &material.normal_texture {
                     x if x.is_empty() => None,
                     filename => {
-                        println!("diffuse_texture_filename: {}", filename);
-                        let normal_texture =
-                            Self::load_texture(filename, &device).expect("Unable to load texture");
+                        println!("normal_texture_filename: {}", filename);
+                        let normal_texture = Self::load_texture(filename, &device)
+                            .expect("Unable to load normal texture");
                         Some(normal_texture)
                     }
                 };
 
-                let textures = Textures::new(diffuse_texture, normal_texture);
-                Some(textures)
+                let textures = Textures::new(diffuse_texture, normal_texture, None, None, None);
+                let diffuse = material.diffuse;
+                let specular = material.specular;
+                let shininess = material.shininess;
+
+                (
+                    textures,
+                    Material::new(
+                        [diffuse[0], diffuse[1], diffuse[2], 1.0],
+                        [specular[0], specular[1], specular[2], 1.0],
+                        shininess,
+                        0.0,
+                        0.0,
+                    ),
+                )
             }
-            None => None,
+            None => (Textures::default(), Material::default()),
         };
 
-        let pipeline_state = Submesh::build_pipeline_state(library, device);
+        let pipeline_state = Submesh::build_pipeline_state(library, device, &textures);
 
         Self {
             vertex_buffer,
@@ -73,76 +129,162 @@ impl Submesh {
             num_elements,
             textures,
             pipeline_state,
+            material: [pbr_material],
         }
     }
 
-    // pub fn from_gltf(
-    //     device: &Device,
-    //     library: &Library,
-    //     texture_source: &str,
-    //     vertices: Vec<f32>,
-    //     indices: Vec<u32>,
-    //     normals: Vec<f32>,
-    //     text_coords: Vec<f32>,
-    // ) -> Self {
-    //     // let textures = match material {
-    //     //     Some(ref material) => {
-    //     //         let texture_filename = &material.diffuse_texture;
-    //     //         println!("texture_filename: {}", texture_filename);
-    //     //         let texture =
-    //     //             Self::load_texture(texture_filename, &device).expect("Unable to load texture");
-    //     //         let textures = Textures::new(material, texture);
-    //     //         Some(textures)
-    //     //     }
-    //     //     None => None,
-    //     // };
+    pub fn from_gltf(
+        device: &Device,
+        library: &Library,
+        material: Option<gltf::Material>,
+        vertex_buffer: Buffer,
+        index_buffer: Buffer,
+        num_elements: u64,
+    ) -> Self {
+        let mut textures = Textures::default();
+        let mut pbr_material = Material::default();
 
-    //     println!("texture_source: {}", texture_source);
-    //     let texture = Self::load_texture(format!("adamHead/{}", texture_source).as_ref(), &device)
-    //         .expect("Unable to load texture");
-    //     let normal_texture =
-    //         Self::load_texture(format!("adamHead/{}", texture_source).as_ref(), &device)
-    //             .expect("Unable to load texture");
-    //     let textures = Some(Textures::new(Some(texture), Some(normal_texture)));
+        if let Some(material) = material {
+            let normal_texture_source = match material.normal_texture() {
+                Some(info) => {
+                    println!("normal text_coord index: {}", info.tex_coord());
+                    match info.texture().source().source() {
+                        gltf::image::Source::Uri { uri, .. } => uri,
+                        x => {
+                            println!("x = {:?}", x);
+                            todo!()
+                        }
+                    }
+                }
+                None => "",
+            };
+            let normal_texture = Self::load_texture(
+                format!("{}/{}", TEXTURE_PATH, normal_texture_source).as_ref(),
+                &device,
+            )
+            .expect("Unable to load normal texture");
+            let occlusion_texture_source = match material.occlusion_texture() {
+                Some(info) => {
+                    println!("occlusion text_coord index: {}", info.tex_coord());
+                    match info.texture().source().source() {
+                        gltf::image::Source::Uri { uri, .. } => uri,
+                        x => {
+                            println!("x = {:?}", x);
+                            todo!()
+                        }
+                    }
+                }
+                None => "",
+            };
+            let occlusion_texture = Self::load_texture(
+                format!("{}/{}", TEXTURE_PATH, occlusion_texture_source).as_ref(),
+                &device,
+            )
+            .expect("Unable to load occlusion texture");
 
-    //     let vertex_buffer = device.new_buffer_with_data(
-    //         vertices.as_ptr() as *const _,
-    //         mem::size_of::<f32>() as u64 * vertices.len() as u64,
-    //         MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-    //     );
-    //     let index_buffer = device.new_buffer_with_data(
-    //         indices.as_ptr() as *const _,
-    //         mem::size_of::<u32>() as u64 * indices.len() as u64,
-    //         MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-    //     );
-    //     let normal_buffer = device.new_buffer_with_data(
-    //         normals.as_ptr() as *const _,
-    //         mem::size_of::<f32>() as u64 * normals.len() as u64,
-    //         MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-    //     );
-    //     let text_coords_buffer = device.new_buffer_with_data(
-    //         text_coords.as_ptr() as *const _,
-    //         mem::size_of::<f32>() as u64 * text_coords.len() as u64,
-    //         MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-    //     );
+            let emissive_texture_source = match material.emissive_texture() {
+                Some(info) => {
+                    println!("emissive text_coord index: {}", info.tex_coord());
+                    match info.texture().source().source() {
+                        gltf::image::Source::Uri { uri, .. } => uri,
+                        x => {
+                            println!("x = {:?}", x);
+                            todo!()
+                        }
+                    }
+                }
+                None => "",
+            };
+            let emissive_texture = Self::load_texture(
+                format!("{}/{}", TEXTURE_PATH, emissive_texture_source).as_ref(),
+                &device,
+            )
+            .expect("Unable to load emissive texture");
 
-    //     let pipeline_state = Submesh::build_pipeline_state(library, device);
+            let emissive_factor = material.emissive_factor();
+            println!("emissive factor: {:?}", emissive_factor);
 
-    //     Self {
-    //         vertices,
-    //         indices,
-    //         vertex_buffer,
-    //         index_buffer,
-    //         normal_buffer,
-    //         text_coords_buffer,
-    //         textures,
-    //         pipeline_state,
-    //     }
-    // }
+            let pbr_metallic_roughness = material.pbr_metallic_roughness();
+            let base_color_factor = pbr_metallic_roughness.base_color_factor();
+            let metallic_factor = pbr_metallic_roughness.metallic_factor();
+            let roughness_factor = pbr_metallic_roughness.roughness_factor();
+            let base_color_texture_source = match pbr_metallic_roughness.base_color_texture() {
+                Some(info) => {
+                    println!("base text_coord index: {}", info.tex_coord());
+                    match info.texture().source().source() {
+                        gltf::image::Source::Uri { uri, .. } => uri,
+                        x => {
+                            println!("x = {:?}", x);
+                            todo!()
+                        }
+                    }
+                }
+                None => "",
+            };
+            let base_color_texture = Self::load_texture(
+                format!("{}/{}", TEXTURE_PATH, base_color_texture_source).as_ref(),
+                &device,
+            )
+            .expect("Unable to load base color texture");
+            let metallic_roughness_texture_source =
+                match pbr_metallic_roughness.metallic_roughness_texture() {
+                    Some(info) => {
+                        println!("metallic roughness text_coord index: {}", info.tex_coord());
+                        match info.texture().source().source() {
+                            gltf::image::Source::Uri { uri, .. } => uri,
+                            x => {
+                                println!("x = {:?}", x);
+                                todo!()
+                            }
+                        }
+                    }
+                    None => "",
+                };
+            let metallic_roughness_texture = Self::load_texture(
+                format!("{}/{}", TEXTURE_PATH, metallic_roughness_texture_source).as_ref(),
+                &device,
+            )
+            .expect("Unable to load metallic roughness texture");
 
-    fn build_pipeline_state(library: &Library, device: &Device) -> RenderPipelineState {
+            textures = Textures::new(
+                Some(base_color_texture),
+                Some(normal_texture),
+                Some(metallic_roughness_texture),
+                Some(occlusion_texture),
+                Some(emissive_texture),
+            );
+            pbr_material = Material::new(
+                base_color_factor,
+                [0.0, 0.0, 0.0, 0.0],
+                0.0,
+                roughness_factor,
+                metallic_factor,
+            );
+        }
+
+        let pipeline_state = Submesh::build_pipeline_state(library, device, &textures);
+
+        Self {
+            vertex_buffer,
+            index_buffer,
+            num_elements,
+            textures,
+            pipeline_state,
+            material: [pbr_material],
+        }
+    }
+
+    fn build_pipeline_state(
+        library: &Library,
+        device: &Device,
+        textures: &Textures,
+    ) -> RenderPipelineState {
+        let fragment_constants = Self::make_function_constants(textures);
+
+        let fragment_function = library
+            .get_function("fragment_main", Some(fragment_constants))
+            .expect("No Metal function exists");
         let vertex_function = library.get_function("vertex_main", None).unwrap();
-        let fragment_function = library.get_function("fragment_main", None).unwrap();
         let vertex_descriptor = default_vertex_descriptor();
 
         let pipeline_state_descriptor = RenderPipelineDescriptor::new();
@@ -159,6 +301,39 @@ impl Submesh {
         device
             .new_render_pipeline_state(&pipeline_state_descriptor)
             .unwrap()
+    }
+
+    fn make_function_constants(textures: &Textures) -> FunctionConstantValues {
+        let function_constants = FunctionConstantValues::new();
+        function_constants.set_constant_value_at_index(
+            [textures.diffuse_texture.is_some()].as_ptr() as *const _,
+            MTLDataType::Bool,
+            0,
+        );
+        function_constants.set_constant_value_at_index(
+            [textures.normal_texture.is_some()].as_ptr() as *const _,
+            MTLDataType::Bool,
+            1,
+        );
+        // metallic roughness
+        function_constants.set_constant_value_at_index(
+            [textures.metallic_roughness_texture.is_some()].as_ptr() as *const _,
+            MTLDataType::Bool,
+            2,
+        );
+        // ambiemt occlusion
+        function_constants.set_constant_value_at_index(
+            [textures.ambient_occlusion_texture.is_some()].as_ptr() as *const _,
+            MTLDataType::Bool,
+            3,
+        );
+        // emissive
+        function_constants.set_constant_value_at_index(
+            [textures.emissive_texture.is_some()].as_ptr() as *const _,
+            MTLDataType::Bool,
+            4,
+        );
+        function_constants
     }
 }
 
@@ -339,189 +514,175 @@ impl Model {
         Model::new(node, submeshes, tiling, sampler_state)
     }
 
-    // pub fn from_gltf_filename(
-    //     name: &str,
-    //     tiling: u32,
-    //     device: &Device,
-    //     library: &Library,
-    // ) -> Model {
-    //     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    //         .join(format!("resources/{}", name));
-    //     let (gltf, buffers, _) = gltf::import(path.as_path()).expect("Failed to load gltf file");
+    pub fn from_gltf_filename(
+        name: &str,
+        tiling: u32,
+        device: &Device,
+        library: &Library,
+    ) -> Model {
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("resources/{}", name));
+        let (gltf, buffers, _) = gltf::import(path.as_path()).expect("Failed to load gltf file");
 
-    //     let mut submeshes: Vec<Submesh> = vec![];
+        let mut submeshes: Vec<Submesh> = vec![];
 
-    //     // for model in models {
-    //     //     let mesh = model.mesh;
-    //     //     let vertices = mesh.positions;
-    //     //     let indices = mesh.indices;
-    //     //     let normals = mesh.normals;
-    //     //     let text_coords = mesh.texcoords;
-    //     //     let mut material = None;
-    //     //     if let Some(id) = mesh.material_id {
-    //     //         material = match materials {
-    //     //             Some(ref materials) => Some(materials[id].clone()),
-    //     //             None => None,
-    //     //         };
-    //     //     }
+        for mesh in gltf.meshes() {
+            println!("Mesh #{}", mesh.index());
+            println!("name: {:?}", mesh.name());
+            for primitive in mesh.primitives() {
+                println!("- Primitive #{}", primitive.index());
+                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-    //     //     let submesh = Submesh::new(&device, material, vertices, indices, normals, text_coords);
-    //     //     submeshes.push(submesh);
-    //     // }
+                let mut vertices = vec![];
+                let mut indices = vec![];
 
-    //     for mesh in gltf.meshes() {
-    //         println!("Mesh #{}", mesh.index());
-    //         for primitive in mesh.primitives() {
-    //             println!("- Primitive #{}", primitive.index());
-    //             let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+                if let Some(iter) = reader.read_positions() {
+                    vertices = iter
+                        .map(|vertex_position| ModelVertex {
+                            position: [vertex_position[0], vertex_position[1], vertex_position[2]],
+                            ..ModelVertex::default()
+                        })
+                        .collect()
+                }
 
-    //             let mut vertices = vec![];
-    //             let mut indices = vec![];
-    //             let mut normals = vec![];
-    //             let mut text_coords = vec![];
+                if let Some(iter) = reader.read_indices() {
+                    indices = iter.into_u32().map(|index| index).collect()
+                }
 
-    //             if let Some(iter) = reader.read_positions() {
-    //                 for vertex_position in iter {
-    //                     vertices.push(vertex_position[0]);
-    //                     vertices.push(vertex_position[1]);
-    //                     vertices.push(vertex_position[2]);
-    //                 }
-    //             }
+                if let Some(iter) = reader.read_normals() {
+                    for (i, vertex_normal) in iter.enumerate() {
+                        vertices[i].normal = [vertex_normal[0], vertex_normal[1], vertex_normal[2]];
+                    }
+                }
 
-    //             if let Some(iter) = reader.read_indices() {
-    //                 match iter {
-    //                     gltf::mesh::util::ReadIndices::U8(iter) => {
-    //                         for index in iter {
-    //                             indices.push(index as u32);
-    //                         }
-    //                     }
-    //                     gltf::mesh::util::ReadIndices::U16(iter) => {
-    //                         for index in iter {
-    //                             indices.push(index as u32);
-    //                         }
-    //                     }
-    //                     gltf::mesh::util::ReadIndices::U32(iter) => {
-    //                         for index in iter {
-    //                             indices.push(index);
-    //                         }
-    //                     }
-    //                 };
-    //             }
+                let material = gltf.materials().nth(mesh.index());
 
-    //             if let Some(iter) = reader.read_normals() {
-    //                 for vertex_normal in iter {
-    //                     normals.push(vertex_normal[0]);
-    //                     normals.push(vertex_normal[1]);
-    //                     normals.push(vertex_normal[2]);
-    //                 }
-    //             }
+                if let Some(iter) = reader.read_tex_coords(0) {
+                    for (i, text_coord) in iter.into_f32().enumerate() {
+                        vertices[i].text_coords = [text_coord[0], text_coord[1]];
+                    }
+                }
 
-    //             if let Some(iter) = reader.read_tex_coords(1) {
-    //                 match iter {
-    //                     gltf::mesh::util::ReadTexCoords::U8(iter) => {
-    //                         for text_coord in iter {
-    //                             text_coords.push(text_coord[0] as f32);
-    //                             text_coords.push(text_coord[1] as f32);
-    //                         }
-    //                     }
-    //                     gltf::mesh::util::ReadTexCoords::U16(iter) => {
-    //                         for text_coord in iter {
-    //                             text_coords.push(text_coord[0] as f32);
-    //                             text_coords.push(text_coord[1] as f32);
-    //                         }
-    //                     }
-    //                     gltf::mesh::util::ReadTexCoords::F32(iter) => {
-    //                         for text_coord in iter {
-    //                             text_coords.push(text_coord[0]);
-    //                             text_coords.push(text_coord[1]);
-    //                         }
-    //                     }
-    //                 }
-    //             }
+                // if let Some(iter) = reader.read_tex_coords(1) {
+                //     for (i, text_coord) in iter.into_f32().enumerate() {
+                //         vertices[i].text_coords[1] = [text_coord[0], text_coord[1]];
+                //     }
+                // }
 
-    //             let texture_source =
-    //                 match gltf.textures().nth(mesh.index()).unwrap().source().source() {
-    //                     gltf::image::Source::Uri { uri, .. } => {
-    //                         uri
-    //                         // let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    //                         //     .join(format!("resources/{}", uri));
-    //                         // let image = image::open(path).expect("Failed to load image");
-    //                     }
-    //                     _ => todo!(),
-    //                 };
+                if let Some(iter) = reader.read_tangents() {
+                    for (i, tangent) in iter.enumerate() {
+                        vertices[i].tangent = [tangent[0], tangent[1], tangent[2]];
+                        let normal_vector = Vec3::from(vertices[i].normal);
+                        let tangent_vector = Vec3::from(vertices[i].tangent);
+                        vertices[i].bitangent =
+                            (normal_vector.cross(tangent_vector) * tangent[3]).into();
+                    }
+                } else {
+                    let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
+                    // Calculate tangents and bitangets. We're going to
+                    // use the triangles, so we need to loop through the
+                    // indices in chunks of 3
+                    for c in indices.chunks(3) {
+                        let v0 = vertices[c[0] as usize];
+                        let v1 = vertices[c[1] as usize];
+                        let v2 = vertices[c[2] as usize];
 
-    //             let submesh = Submesh::from_gltf(
-    //                 &device,
-    //                 &library,
-    //                 texture_source,
-    //                 vertices,
-    //                 indices,
-    //                 normals,
-    //                 text_coords,
-    //             );
-    //         }
-    //     }
+                        let pos0: Vec3 = v0.position.into();
+                        let pos1: Vec3 = v1.position.into();
+                        let pos2: Vec3 = v2.position.into();
 
-    //     let (models, materials) = tobj::load_obj(
-    //         path.as_path(),
-    //         &tobj::LoadOptions {
-    //             triangulate: true,
-    //             single_index: true,
-    //             // ignore_points: true,
-    //             // ignore_lines: true,
-    //             ..Default::default()
-    //         },
-    //         // &tobj::LoadOptions::default(),
-    //     )
-    //     .expect(format!("Failed to load {} file", name).as_str());
+                        let uv0: Vec2 = v0.text_coords.into();
+                        let uv1: Vec2 = v1.text_coords.into();
+                        let uv2: Vec2 = v2.text_coords.into();
 
-    //     let materials = match materials {
-    //         Ok(materials) => Some(materials),
-    //         Err(_e) => {
-    //             println!("Failed to load {} file", name);
-    //             None
-    //         }
-    //     };
+                        // Calculate the edges of the triangle
+                        let delta_pos1 = pos1 - pos0;
+                        let delta_pos2 = pos2 - pos0;
 
-    //     let mut submeshes: Vec<Submesh> = vec![];
+                        // This will give us a direction to calculate the
+                        // tangent and bitangent
+                        let delta_uv1 = uv1 - uv0;
+                        let delta_uv2 = uv2 - uv0;
 
-    //     for model in models {
-    //         let mesh = model.mesh;
-    //         let vertices = mesh.positions;
-    //         let indices = mesh.indices;
-    //         let normals = mesh.normals;
-    //         let text_coords = mesh.texcoords;
-    //         let mut material = None;
-    //         if let Some(id) = mesh.material_id {
-    //             material = match materials {
-    //                 Some(ref materials) => Some(materials[id].clone()),
-    //                 None => None,
-    //             };
-    //         }
+                        // Solving the following system of equations will
+                        // give us the tangent and bitangent.
+                        //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+                        //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+                        // Luckily, the place I found this equation provided
+                        // the solution!
+                        let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+                        let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+                        let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
 
-    //         let submesh = Submesh::new(
-    //             &device,
-    //             &library,
-    //             material,
-    //             vertices,
-    //             indices,
-    //             normals,
-    //             text_coords,
-    //         );
-    //         submeshes.push(submesh);
-    //     }
+                        // We'll use the same tangent/bitangent for each vertex in the triangle
+                        vertices[c[0] as usize].tangent =
+                            (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
+                        vertices[c[1] as usize].tangent =
+                            (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
+                        vertices[c[2] as usize].tangent =
+                            (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
+                        vertices[c[0] as usize].bitangent =
+                            (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
+                        vertices[c[1] as usize].bitangent =
+                            (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
+                        vertices[c[2] as usize].bitangent =
+                            (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
 
-    //     // let pipeline_state = Model::build_pipeline_state(library, device);
-    //     let sampler_state = Model::build_sampler_state(device);
+                        // Used to average the tangents/bitangents
+                        triangles_included[c[0] as usize] += 1;
+                        triangles_included[c[1] as usize] += 1;
+                        triangles_included[c[2] as usize] += 1;
+                    }
 
-    //     let mut node = Node::default();
-    //     node.name = name.to_string();
+                    // Average the tangents/bitangents
+                    for (i, n) in triangles_included.into_iter().enumerate() {
+                        let denom = 1.0 / n as f32;
+                        let mut v = &mut vertices[i];
+                        v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
+                        v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
+                    }
+                }
 
-    //     Model::new(node, submeshes, tiling, sampler_state)
-    // }
+                let vertex_buffer = device.new_buffer_with_data(
+                    vertices.as_ptr() as *const _,
+                    mem::size_of::<ModelVertex>() as u64 * vertices.len() as u64,
+                    MTLResourceOptions::CPUCacheModeDefaultCache
+                        | MTLResourceOptions::StorageModeManaged,
+                );
+                let index_buffer = device.new_buffer_with_data(
+                    indices.as_ptr() as *const _,
+                    mem::size_of::<u32>() as u64 * indices.len() as u64,
+                    MTLResourceOptions::CPUCacheModeDefaultCache
+                        | MTLResourceOptions::StorageModeManaged,
+                );
+                let num_elements = indices.len() as u64;
+
+                let submesh = Submesh::from_gltf(
+                    &device,
+                    &library,
+                    material,
+                    vertex_buffer,
+                    index_buffer,
+                    num_elements,
+                );
+                submeshes.push(submesh);
+            }
+        }
+
+        let sampler_state = Model::build_sampler_state(device);
+
+        let mut node = Node::default();
+        node.name = name.to_string();
+
+        Model::new(node, submeshes, tiling, sampler_state)
+    }
 
     pub fn set_position(&mut self, position: Vec3) {
         self.node.position = position;
+    }
+
+    pub fn name(&self) -> &String {
+        &self.node.name
     }
 
     pub fn set_rotation(&mut self, rotation: Vec3) {
@@ -536,11 +697,92 @@ impl Model {
         self.node.model_matrix()
     }
 
+    pub fn render(
+        &self,
+        render_encoder: &RenderCommandEncoderRef,
+        uniforms: &mut [Uniforms],
+        fragment_uniforms: &mut [FragmentUniforms],
+    ) {
+        uniforms[0].modelMatrix = unsafe { std::mem::transmute(self.model_matrix()) };
+        uniforms[0].normalMatrix =
+            unsafe { std::mem::transmute(Mat3A::from_mat4(self.model_matrix())) };
+        render_encoder.set_vertex_bytes(
+            BufferIndexUniforms as u64,
+            std::mem::size_of::<Uniforms>() as u64,
+            uniforms.as_ptr() as *const _,
+        );
+
+        fragment_uniforms[0].tiling = self.tiling;
+        render_encoder.set_fragment_bytes(
+            BufferIndexFragmentUniforms as u64,
+            std::mem::size_of::<FragmentUniforms>() as u64,
+            fragment_uniforms.as_ptr() as *const _,
+        );
+
+        render_encoder.set_fragment_sampler_state(0, Some(&self.sampler_state));
+
+        for submesh in self.submeshes.iter() {
+            render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
+
+            render_encoder.set_vertex_buffer(
+                BufferIndexVertices as u64,
+                Some(&submesh.vertex_buffer),
+                0,
+            );
+
+            if let Some(diffuse_texture) = &submesh.textures.diffuse_texture {
+                render_encoder
+                    .set_fragment_texture(Textures_BaseColorTexture as u64, Some(&diffuse_texture));
+            }
+
+            if let Some(normal_texture) = &submesh.textures.normal_texture {
+                render_encoder
+                    .set_fragment_texture(Textures_NormalTexture as u64, Some(&normal_texture));
+            }
+
+            if let Some(metallic_roughness_texture) = &submesh.textures.metallic_roughness_texture {
+                render_encoder.set_fragment_texture(
+                    Textures_MetallicRoughnessTexture as u64,
+                    Some(&metallic_roughness_texture),
+                );
+            }
+
+            if let Some(occlusion_texture) = &submesh.textures.ambient_occlusion_texture {
+                render_encoder.set_fragment_texture(
+                    Textures_OcclusionTexture as u64,
+                    Some(&occlusion_texture),
+                );
+            }
+
+            if let Some(emissive_texture) = &submesh.textures.emissive_texture {
+                render_encoder
+                    .set_fragment_texture(Textures_EmissiveTexture as u64, Some(&emissive_texture));
+            }
+
+            render_encoder.set_fragment_bytes(
+                BufferIndexMaterials as u64,
+                std::mem::size_of::<Material>() as u64,
+                submesh.material.as_ptr() as *const _,
+            );
+
+            // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
+            render_encoder.draw_indexed_primitives(
+                MTLPrimitiveType::Triangle,
+                submesh.num_elements,
+                MTLIndexType::UInt32,
+                &submesh.index_buffer,
+                0,
+            );
+        }
+    }
+
     fn build_sampler_state(device: &Device) -> SamplerState {
         let descriptor = SamplerDescriptor::new();
         descriptor.set_address_mode_s(MTLSamplerAddressMode::Repeat);
         descriptor.set_address_mode_t(MTLSamplerAddressMode::Repeat);
-        descriptor.set_mip_filter(MTLSamplerMipFilter::Linear);
+        descriptor.set_mip_filter(MTLSamplerMipFilter::Nearest);
+        // descriptor.set_mag_filter(MTLSamplerMinMagFilter::Nearest);
+        // descriptor.set_min_filter(MTLSamplerMinMagFilter::Nearest);
         descriptor.set_max_anisotropy(8);
         device.new_sampler(&descriptor)
     }
@@ -550,6 +792,7 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
     let vertex_descriptor = VertexDescriptor::new();
     let mut offset = 0;
 
+    // position
     let attribute_0 = vertex_descriptor
         .attributes()
         .object_at(Attributes_Position as u64)
@@ -560,6 +803,7 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
 
     offset += mem::size_of::<f32>() as u64 * 3;
 
+    // normal
     let attribute_1 = vertex_descriptor
         .attributes()
         .object_at(Attributes_Normal as u64)
@@ -570,6 +814,7 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
 
     offset += mem::size_of::<f32>() as u64 * 3;
 
+    // UV
     let attribute_2 = vertex_descriptor
         .attributes()
         .object_at(Attributes_UV as u64)
@@ -580,6 +825,7 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
 
     offset += mem::size_of::<f32>() as u64 * 2;
 
+    // tangent
     let attribute_3 = vertex_descriptor
         .attributes()
         .object_at(Attributes_Tangent as u64)
@@ -590,6 +836,7 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
 
     offset += mem::size_of::<f32>() as u64 * 3;
 
+    // bitangent
     let attribute_4 = vertex_descriptor
         .attributes()
         .object_at(Attributes_Bitangent as u64)
@@ -610,13 +857,37 @@ pub struct Textures {
     // filename: String,
     pub(crate) diffuse_texture: Option<Texture>,
     pub(crate) normal_texture: Option<Texture>,
+    pub(crate) metallic_roughness_texture: Option<Texture>,
+    pub(crate) ambient_occlusion_texture: Option<Texture>,
+    pub(crate) emissive_texture: Option<Texture>,
 }
 
 impl Textures {
-    fn new(diffuse_texture: Option<Texture>, normal_texture: Option<Texture>) -> Textures {
+    fn new(
+        diffuse_texture: Option<Texture>,
+        normal_texture: Option<Texture>,
+        metallic_roughness_texture: Option<Texture>,
+        ambient_occlusion_texture: Option<Texture>,
+        emissive_texture: Option<Texture>,
+    ) -> Textures {
         Textures {
             diffuse_texture,
             normal_texture,
+            metallic_roughness_texture,
+            ambient_occlusion_texture,
+            emissive_texture,
+        }
+    }
+}
+
+impl Default for Textures {
+    fn default() -> Self {
+        Textures {
+            diffuse_texture: None,
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            ambient_occlusion_texture: None,
+            emissive_texture: None,
         }
     }
 }

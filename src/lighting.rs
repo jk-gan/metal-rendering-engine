@@ -1,6 +1,4 @@
-use crate::shader_bindings::{
-    Light, LightType_Ambientlight, LightType_Pointlight, LightType_Spotlight, LightType_Sunlight,
-};
+use crate::shader_bindings::{Light, LightType_Ambientlight, LightType_Sunlight};
 use glam::Vec3A;
 
 pub struct Lighting {
