@@ -136,7 +136,7 @@ impl Submesh {
     pub fn from_gltf(
         device: &Device,
         library: &Library,
-        material: Option<gltf::Material>,
+        material: &Option<gltf::Material>,
         vertex_buffer: Buffer,
         index_buffer: Buffer,
         num_elements: u64,
@@ -339,145 +339,130 @@ impl Submesh {
 
 impl Texturable for Submesh {}
 
-pub struct Model {
-    node: Node,
+pub struct Mesh {
+    name: String,
     pub(crate) submeshes: Vec<Submesh>,
-    pub(crate) tiling: u32,
-    pub(crate) sampler_state: SamplerState,
 }
 
-impl Model {
-    pub fn new(
-        node: Node,
-        submeshes: Vec<Submesh>,
-        tiling: u32,
-        sampler_state: SamplerState,
-    ) -> Model {
-        Model {
-            node,
-            submeshes,
-            tiling,
-            sampler_state,
-        }
-    }
+impl Mesh {
+    fn from_gltf(
+        device: &Device,
+        library: &Library,
+        buffers: &Vec<gltf::buffer::Data>,
+        mesh: gltf::Mesh,
+        material: Option<gltf::material::Material>,
+    ) -> Mesh {
+        let mut submeshes = vec![];
+        for primitive in mesh.primitives() {
+            println!("- Primitive #{}", primitive.index());
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
 
-    pub fn from_obj_filename(name: &str, tiling: u32, device: &Device, library: &Library) -> Model {
-        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("resources/{}", name));
-        let (models, materials) = tobj::load_obj(
-            path.as_path(),
-            &tobj::LoadOptions {
-                triangulate: true,
-                single_index: true,
-                // ignore_points: true,
-                // ignore_lines: true,
-                ..Default::default()
-            },
-            // &tobj::LoadOptions::default(),
-        )
-        .expect(format!("Failed to load {} file", name).as_str());
+            let mut vertices = vec![];
+            let mut indices = vec![];
 
-        let materials = match materials {
-            Ok(materials) => Some(materials),
-            Err(_e) => {
-                println!("Failed to load {} file", name);
-                None
-            }
-        };
-
-        let mut submeshes: Vec<Submesh> = vec![];
-
-        for model in models {
-            let mut material = None;
-            if let Some(id) = model.mesh.material_id {
-                material = match materials {
-                    Some(ref materials) => Some(materials[id].clone()),
-                    None => None,
-                };
+            if let Some(iter) = reader.read_positions() {
+                vertices = iter
+                    .map(|vertex_position| ModelVertex {
+                        position: [vertex_position[0], vertex_position[1], vertex_position[2]],
+                        ..ModelVertex::default()
+                    })
+                    .collect()
             }
 
-            let mut vertices = Vec::new();
-            for i in 0..model.mesh.positions.len() / 3 {
-                vertices.push(ModelVertex {
-                    position: [
-                        model.mesh.positions[i * 3],
-                        model.mesh.positions[i * 3 + 1],
-                        model.mesh.positions[i * 3 + 2],
-                    ],
-                    normal: [
-                        model.mesh.normals[i * 3],
-                        model.mesh.normals[i * 3 + 1],
-                        model.mesh.normals[i * 3 + 2],
-                    ],
-                    text_coords: [model.mesh.texcoords[i * 2], model.mesh.texcoords[i * 2 + 1]],
-                    tangent: [0.0; 3],
-                    bitangent: [0.0; 3],
-                });
+            if let Some(iter) = reader.read_indices() {
+                indices = iter.into_u32().map(|index| index).collect()
             }
 
-            let indices = &model.mesh.indices;
-            let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
-            // Calculate tangents and bitangets. We're going to
-            // use the triangles, so we need to loop through the
-            // indices in chunks of 3
-            for c in indices.chunks(3) {
-                let v0 = vertices[c[0] as usize];
-                let v1 = vertices[c[1] as usize];
-                let v2 = vertices[c[2] as usize];
-
-                let pos0: Vec3 = v0.position.into();
-                let pos1: Vec3 = v1.position.into();
-                let pos2: Vec3 = v2.position.into();
-
-                let uv0: Vec2 = v0.text_coords.into();
-                let uv1: Vec2 = v1.text_coords.into();
-                let uv2: Vec2 = v2.text_coords.into();
-
-                // Calculate the edges of the triangle
-                let delta_pos1 = pos1 - pos0;
-                let delta_pos2 = pos2 - pos0;
-
-                // This will give us a direction to calculate the
-                // tangent and bitangent
-                let delta_uv1 = uv1 - uv0;
-                let delta_uv2 = uv2 - uv0;
-
-                // Solving the following system of equations will
-                // give us the tangent and bitangent.
-                //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
-                //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
-                // Luckily, the place I found this equation provided
-                // the solution!
-                let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-                let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-                let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
-
-                // We'll use the same tangent/bitangent for each vertex in the triangle
-                vertices[c[0] as usize].tangent =
-                    (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
-                vertices[c[1] as usize].tangent =
-                    (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
-                vertices[c[2] as usize].tangent =
-                    (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
-                vertices[c[0] as usize].bitangent =
-                    (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
-                vertices[c[1] as usize].bitangent =
-                    (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
-                vertices[c[2] as usize].bitangent =
-                    (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
-
-                // Used to average the tangents/bitangents
-                triangles_included[c[0] as usize] += 1;
-                triangles_included[c[1] as usize] += 1;
-                triangles_included[c[2] as usize] += 1;
+            if let Some(iter) = reader.read_normals() {
+                for (i, vertex_normal) in iter.enumerate() {
+                    vertices[i].normal = [vertex_normal[0], vertex_normal[1], vertex_normal[2]];
+                }
             }
 
-            // Average the tangents/bitangents
-            for (i, n) in triangles_included.into_iter().enumerate() {
-                let denom = 1.0 / n as f32;
-                let mut v = &mut vertices[i];
-                v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
-                v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
+            if let Some(iter) = reader.read_tex_coords(0) {
+                for (i, text_coord) in iter.into_f32().enumerate() {
+                    vertices[i].text_coords = [text_coord[0], text_coord[1]];
+                }
+            }
+
+            // if let Some(iter) = reader.read_tex_coords(1) {
+            //     for (i, text_coord) in iter.into_f32().enumerate() {
+            //         vertices[i].text_coords[1] = [text_coord[0], text_coord[1]];
+            //     }
+            // }
+
+            if let Some(iter) = reader.read_tangents() {
+                for (i, tangent) in iter.enumerate() {
+                    vertices[i].tangent = [tangent[0], tangent[1], tangent[2]];
+                    let normal_vector = Vec3::from(vertices[i].normal);
+                    let tangent_vector = Vec3::from(vertices[i].tangent);
+                    vertices[i].bitangent =
+                        (normal_vector.cross(tangent_vector) * tangent[3]).into();
+                }
+            } else {
+                let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
+                // Calculate tangents and bitangets. We're going to
+                // use the triangles, so we need to loop through the
+                // indices in chunks of 3
+                for c in indices.chunks(3) {
+                    let v0 = vertices[c[0] as usize];
+                    let v1 = vertices[c[1] as usize];
+                    let v2 = vertices[c[2] as usize];
+
+                    let pos0: Vec3 = v0.position.into();
+                    let pos1: Vec3 = v1.position.into();
+                    let pos2: Vec3 = v2.position.into();
+
+                    let uv0: Vec2 = v0.text_coords.into();
+                    let uv1: Vec2 = v1.text_coords.into();
+                    let uv2: Vec2 = v2.text_coords.into();
+
+                    // Calculate the edges of the triangle
+                    let delta_pos1 = pos1 - pos0;
+                    let delta_pos2 = pos2 - pos0;
+
+                    // This will give us a direction to calculate the
+                    // tangent and bitangent
+                    let delta_uv1 = uv1 - uv0;
+                    let delta_uv2 = uv2 - uv0;
+
+                    // Solving the following system of equations will
+                    // give us the tangent and bitangent.
+                    //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+                    //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+                    // Luckily, the place I found this equation provided
+                    // the solution!
+                    let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+                    let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+                    let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+
+                    // We'll use the same tangent/bitangent for each vertex in the triangle
+                    vertices[c[0] as usize].tangent =
+                        (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
+                    vertices[c[1] as usize].tangent =
+                        (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
+                    vertices[c[2] as usize].tangent =
+                        (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
+                    vertices[c[0] as usize].bitangent =
+                        (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
+                    vertices[c[1] as usize].bitangent =
+                        (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
+                    vertices[c[2] as usize].bitangent =
+                        (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
+
+                    // Used to average the tangents/bitangents
+                    triangles_included[c[0] as usize] += 1;
+                    triangles_included[c[1] as usize] += 1;
+                    triangles_included[c[2] as usize] += 1;
+                }
+
+                // Average the tangents/bitangents
+                for (i, n) in triangles_included.into_iter().enumerate() {
+                    let denom = 1.0 / n as f32;
+                    let mut v = &mut vertices[i];
+                    v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
+                    v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
+                }
             }
 
             let vertex_buffer = device.new_buffer_with_data(
@@ -494,10 +479,10 @@ impl Model {
             );
             let num_elements = indices.len() as u64;
 
-            let submesh = Submesh::new(
+            let submesh = Submesh::from_gltf(
                 &device,
                 &library,
-                material,
+                &material,
                 vertex_buffer,
                 index_buffer,
                 num_elements,
@@ -505,14 +490,182 @@ impl Model {
             submeshes.push(submesh);
         }
 
-        // let pipeline_state = Model::build_pipeline_state(library, device);
-        let sampler_state = Model::build_sampler_state(device);
-
-        let mut node = Node::default();
-        node.name = name.to_string();
-
-        Model::new(node, submeshes, tiling, sampler_state)
+        Self {
+            name: mesh.name().unwrap_or("untitled").to_string(),
+            submeshes,
+        }
     }
+}
+
+pub struct Model {
+    node: Node,
+    pub(crate) meshes: Vec<Mesh>,
+    pub(crate) tiling: u32,
+    pub(crate) sampler_state: SamplerState,
+}
+
+impl Model {
+    pub fn new(node: Node, meshes: Vec<Mesh>, tiling: u32, sampler_state: SamplerState) -> Model {
+        Model {
+            node,
+            meshes,
+            tiling,
+            sampler_state,
+        }
+    }
+
+    // pub fn from_obj_filename(name: &str, tiling: u32, device: &Device, library: &Library) -> Model {
+    //     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    //         .join(format!("resources/{}", name));
+    //     let (models, materials) = tobj::load_obj(
+    //         path.as_path(),
+    //         &tobj::LoadOptions {
+    //             triangulate: true,
+    //             single_index: true,
+    //             // ignore_points: true,
+    //             // ignore_lines: true,
+    //             ..Default::default()
+    //         },
+    //         // &tobj::LoadOptions::default(),
+    //     )
+    //     .expect(format!("Failed to load {} file", name).as_str());
+
+    //     let materials = match materials {
+    //         Ok(materials) => Some(materials),
+    //         Err(_e) => {
+    //             println!("Failed to load {} file", name);
+    //             None
+    //         }
+    //     };
+
+    //     let mut submeshes: Vec<Submesh> = vec![];
+
+    //     for model in models {
+    //         let mut material = None;
+    //         if let Some(id) = model.mesh.material_id {
+    //             material = match materials {
+    //                 Some(ref materials) => Some(materials[id].clone()),
+    //                 None => None,
+    //             };
+    //         }
+
+    //         let mut vertices = Vec::new();
+    //         for i in 0..model.mesh.positions.len() / 3 {
+    //             vertices.push(ModelVertex {
+    //                 position: [
+    //                     model.mesh.positions[i * 3],
+    //                     model.mesh.positions[i * 3 + 1],
+    //                     model.mesh.positions[i * 3 + 2],
+    //                 ],
+    //                 normal: [
+    //                     model.mesh.normals[i * 3],
+    //                     model.mesh.normals[i * 3 + 1],
+    //                     model.mesh.normals[i * 3 + 2],
+    //                 ],
+    //                 text_coords: [model.mesh.texcoords[i * 2], model.mesh.texcoords[i * 2 + 1]],
+    //                 tangent: [0.0; 3],
+    //                 bitangent: [0.0; 3],
+    //             });
+    //         }
+
+    //         let indices = &model.mesh.indices;
+    //         let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
+    //         // Calculate tangents and bitangets. We're going to
+    //         // use the triangles, so we need to loop through the
+    //         // indices in chunks of 3
+    //         for c in indices.chunks(3) {
+    //             let v0 = vertices[c[0] as usize];
+    //             let v1 = vertices[c[1] as usize];
+    //             let v2 = vertices[c[2] as usize];
+
+    //             let pos0: Vec3 = v0.position.into();
+    //             let pos1: Vec3 = v1.position.into();
+    //             let pos2: Vec3 = v2.position.into();
+
+    //             let uv0: Vec2 = v0.text_coords.into();
+    //             let uv1: Vec2 = v1.text_coords.into();
+    //             let uv2: Vec2 = v2.text_coords.into();
+
+    //             // Calculate the edges of the triangle
+    //             let delta_pos1 = pos1 - pos0;
+    //             let delta_pos2 = pos2 - pos0;
+
+    //             // This will give us a direction to calculate the
+    //             // tangent and bitangent
+    //             let delta_uv1 = uv1 - uv0;
+    //             let delta_uv2 = uv2 - uv0;
+
+    //             // Solving the following system of equations will
+    //             // give us the tangent and bitangent.
+    //             //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
+    //             //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
+    //             // Luckily, the place I found this equation provided
+    //             // the solution!
+    //             let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+    //             let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+    //             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
+
+    //             // We'll use the same tangent/bitangent for each vertex in the triangle
+    //             vertices[c[0] as usize].tangent =
+    //                 (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
+    //             vertices[c[1] as usize].tangent =
+    //                 (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
+    //             vertices[c[2] as usize].tangent =
+    //                 (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
+    //             vertices[c[0] as usize].bitangent =
+    //                 (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
+    //             vertices[c[1] as usize].bitangent =
+    //                 (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
+    //             vertices[c[2] as usize].bitangent =
+    //                 (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
+
+    //             // Used to average the tangents/bitangents
+    //             triangles_included[c[0] as usize] += 1;
+    //             triangles_included[c[1] as usize] += 1;
+    //             triangles_included[c[2] as usize] += 1;
+    //         }
+
+    //         // Average the tangents/bitangents
+    //         for (i, n) in triangles_included.into_iter().enumerate() {
+    //             let denom = 1.0 / n as f32;
+    //             let mut v = &mut vertices[i];
+    //             v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
+    //             v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
+    //         }
+
+    //         let vertex_buffer = device.new_buffer_with_data(
+    //             vertices.as_ptr() as *const _,
+    //             mem::size_of::<ModelVertex>() as u64 * vertices.len() as u64,
+    //             MTLResourceOptions::CPUCacheModeDefaultCache
+    //                 | MTLResourceOptions::StorageModeManaged,
+    //         );
+    //         let index_buffer = device.new_buffer_with_data(
+    //             indices.as_ptr() as *const _,
+    //             mem::size_of::<u32>() as u64 * indices.len() as u64,
+    //             MTLResourceOptions::CPUCacheModeDefaultCache
+    //                 | MTLResourceOptions::StorageModeManaged,
+    //         );
+    //         let num_elements = indices.len() as u64;
+
+    //         let submesh = Submesh::new(
+    //             &device,
+    //             &library,
+    //             material,
+    //             vertex_buffer,
+    //             index_buffer,
+    //             num_elements,
+    //         );
+    //         submeshes.push(submesh);
+    //     }
+
+    //     // let pipeline_state = Model::build_pipeline_state(library, device);
+    //     let sampler_state = Model::build_sampler_state(device);
+
+    //     let mut node = Node::default();
+    //     node.name = name.to_string();
+
+    //     Model::new(node, submeshes, tiling, sampler_state)
+    // }
 
     pub fn from_gltf_filename(
         name: &str,
@@ -524,149 +677,15 @@ impl Model {
             .join(format!("resources/{}", name));
         let (gltf, buffers, _) = gltf::import(path.as_path()).expect("Failed to load gltf file");
 
-        let mut submeshes: Vec<Submesh> = vec![];
+        let mut meshes: Vec<Mesh> = vec![];
 
-        for mesh in gltf.meshes() {
-            println!("Mesh #{}", mesh.index());
-            println!("name: {:?}", mesh.name());
-            for primitive in mesh.primitives() {
-                println!("- Primitive #{}", primitive.index());
-                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+        for gltf_mesh in gltf.meshes() {
+            println!("Mesh #{}", gltf_mesh.index());
+            println!("name: {:?}", gltf_mesh.name());
+            let material = gltf.materials().nth(gltf_mesh.index());
 
-                let mut vertices = vec![];
-                let mut indices = vec![];
-
-                if let Some(iter) = reader.read_positions() {
-                    vertices = iter
-                        .map(|vertex_position| ModelVertex {
-                            position: [vertex_position[0], vertex_position[1], vertex_position[2]],
-                            ..ModelVertex::default()
-                        })
-                        .collect()
-                }
-
-                if let Some(iter) = reader.read_indices() {
-                    indices = iter.into_u32().map(|index| index).collect()
-                }
-
-                if let Some(iter) = reader.read_normals() {
-                    for (i, vertex_normal) in iter.enumerate() {
-                        vertices[i].normal = [vertex_normal[0], vertex_normal[1], vertex_normal[2]];
-                    }
-                }
-
-                let material = gltf.materials().nth(mesh.index());
-
-                if let Some(iter) = reader.read_tex_coords(0) {
-                    for (i, text_coord) in iter.into_f32().enumerate() {
-                        vertices[i].text_coords = [text_coord[0], text_coord[1]];
-                    }
-                }
-
-                // if let Some(iter) = reader.read_tex_coords(1) {
-                //     for (i, text_coord) in iter.into_f32().enumerate() {
-                //         vertices[i].text_coords[1] = [text_coord[0], text_coord[1]];
-                //     }
-                // }
-
-                if let Some(iter) = reader.read_tangents() {
-                    for (i, tangent) in iter.enumerate() {
-                        vertices[i].tangent = [tangent[0], tangent[1], tangent[2]];
-                        let normal_vector = Vec3::from(vertices[i].normal);
-                        let tangent_vector = Vec3::from(vertices[i].tangent);
-                        vertices[i].bitangent =
-                            (normal_vector.cross(tangent_vector) * tangent[3]).into();
-                    }
-                } else {
-                    let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
-                    // Calculate tangents and bitangets. We're going to
-                    // use the triangles, so we need to loop through the
-                    // indices in chunks of 3
-                    for c in indices.chunks(3) {
-                        let v0 = vertices[c[0] as usize];
-                        let v1 = vertices[c[1] as usize];
-                        let v2 = vertices[c[2] as usize];
-
-                        let pos0: Vec3 = v0.position.into();
-                        let pos1: Vec3 = v1.position.into();
-                        let pos2: Vec3 = v2.position.into();
-
-                        let uv0: Vec2 = v0.text_coords.into();
-                        let uv1: Vec2 = v1.text_coords.into();
-                        let uv2: Vec2 = v2.text_coords.into();
-
-                        // Calculate the edges of the triangle
-                        let delta_pos1 = pos1 - pos0;
-                        let delta_pos2 = pos2 - pos0;
-
-                        // This will give us a direction to calculate the
-                        // tangent and bitangent
-                        let delta_uv1 = uv1 - uv0;
-                        let delta_uv2 = uv2 - uv0;
-
-                        // Solving the following system of equations will
-                        // give us the tangent and bitangent.
-                        //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
-                        //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
-                        // Luckily, the place I found this equation provided
-                        // the solution!
-                        let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-                        let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-                        let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
-
-                        // We'll use the same tangent/bitangent for each vertex in the triangle
-                        vertices[c[0] as usize].tangent =
-                            (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
-                        vertices[c[1] as usize].tangent =
-                            (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
-                        vertices[c[2] as usize].tangent =
-                            (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
-                        vertices[c[0] as usize].bitangent =
-                            (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
-                        vertices[c[1] as usize].bitangent =
-                            (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
-                        vertices[c[2] as usize].bitangent =
-                            (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
-
-                        // Used to average the tangents/bitangents
-                        triangles_included[c[0] as usize] += 1;
-                        triangles_included[c[1] as usize] += 1;
-                        triangles_included[c[2] as usize] += 1;
-                    }
-
-                    // Average the tangents/bitangents
-                    for (i, n) in triangles_included.into_iter().enumerate() {
-                        let denom = 1.0 / n as f32;
-                        let mut v = &mut vertices[i];
-                        v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
-                        v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
-                    }
-                }
-
-                let vertex_buffer = device.new_buffer_with_data(
-                    vertices.as_ptr() as *const _,
-                    mem::size_of::<ModelVertex>() as u64 * vertices.len() as u64,
-                    MTLResourceOptions::CPUCacheModeDefaultCache
-                        | MTLResourceOptions::StorageModeManaged,
-                );
-                let index_buffer = device.new_buffer_with_data(
-                    indices.as_ptr() as *const _,
-                    mem::size_of::<u32>() as u64 * indices.len() as u64,
-                    MTLResourceOptions::CPUCacheModeDefaultCache
-                        | MTLResourceOptions::StorageModeManaged,
-                );
-                let num_elements = indices.len() as u64;
-
-                let submesh = Submesh::from_gltf(
-                    &device,
-                    &library,
-                    material,
-                    vertex_buffer,
-                    index_buffer,
-                    num_elements,
-                );
-                submeshes.push(submesh);
-            }
+            let mesh = Mesh::from_gltf(device, library, &buffers, gltf_mesh, material);
+            meshes.push(mesh);
         }
 
         let sampler_state = Model::build_sampler_state(device);
@@ -674,7 +693,7 @@ impl Model {
         let mut node = Node::default();
         node.name = name.to_string();
 
-        Model::new(node, submeshes, tiling, sampler_state)
+        Model::new(node, meshes, tiling, sampler_state)
     }
 
     pub fn set_position(&mut self, position: Vec3) {
@@ -703,15 +722,6 @@ impl Model {
         uniforms: &mut [Uniforms],
         fragment_uniforms: &mut [FragmentUniforms],
     ) {
-        uniforms[0].modelMatrix = unsafe { std::mem::transmute(self.model_matrix()) };
-        uniforms[0].normalMatrix =
-            unsafe { std::mem::transmute(Mat3A::from_mat4(self.model_matrix())) };
-        render_encoder.set_vertex_bytes(
-            BufferIndexUniforms as u64,
-            std::mem::size_of::<Uniforms>() as u64,
-            uniforms.as_ptr() as *const _,
-        );
-
         fragment_uniforms[0].tiling = self.tiling;
         render_encoder.set_fragment_bytes(
             BufferIndexFragmentUniforms as u64,
@@ -721,58 +731,75 @@ impl Model {
 
         render_encoder.set_fragment_sampler_state(0, Some(&self.sampler_state));
 
-        for submesh in self.submeshes.iter() {
-            render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
-
-            render_encoder.set_vertex_buffer(
-                BufferIndexVertices as u64,
-                Some(&submesh.vertex_buffer),
-                0,
+        for mesh in self.meshes.iter() {
+            uniforms[0].modelMatrix = unsafe { std::mem::transmute(self.model_matrix()) };
+            uniforms[0].normalMatrix =
+                unsafe { std::mem::transmute(Mat3A::from_mat4(self.model_matrix())) };
+            render_encoder.set_vertex_bytes(
+                BufferIndexUniforms as u64,
+                std::mem::size_of::<Uniforms>() as u64,
+                uniforms.as_ptr() as *const _,
             );
 
-            if let Some(diffuse_texture) = &submesh.textures.diffuse_texture {
-                render_encoder
-                    .set_fragment_texture(Textures_BaseColorTexture as u64, Some(&diffuse_texture));
-            }
+            for submesh in mesh.submeshes.iter() {
+                render_encoder.set_render_pipeline_state(&submesh.pipeline_state);
 
-            if let Some(normal_texture) = &submesh.textures.normal_texture {
-                render_encoder
-                    .set_fragment_texture(Textures_NormalTexture as u64, Some(&normal_texture));
-            }
+                render_encoder.set_vertex_buffer(
+                    BufferIndexVertices as u64,
+                    Some(&submesh.vertex_buffer),
+                    0,
+                );
 
-            if let Some(metallic_roughness_texture) = &submesh.textures.metallic_roughness_texture {
-                render_encoder.set_fragment_texture(
-                    Textures_MetallicRoughnessTexture as u64,
-                    Some(&metallic_roughness_texture),
+                if let Some(diffuse_texture) = &submesh.textures.diffuse_texture {
+                    render_encoder.set_fragment_texture(
+                        Textures_BaseColorTexture as u64,
+                        Some(&diffuse_texture),
+                    );
+                }
+
+                if let Some(normal_texture) = &submesh.textures.normal_texture {
+                    render_encoder
+                        .set_fragment_texture(Textures_NormalTexture as u64, Some(&normal_texture));
+                }
+
+                if let Some(metallic_roughness_texture) =
+                    &submesh.textures.metallic_roughness_texture
+                {
+                    render_encoder.set_fragment_texture(
+                        Textures_MetallicRoughnessTexture as u64,
+                        Some(&metallic_roughness_texture),
+                    );
+                }
+
+                if let Some(occlusion_texture) = &submesh.textures.ambient_occlusion_texture {
+                    render_encoder.set_fragment_texture(
+                        Textures_OcclusionTexture as u64,
+                        Some(&occlusion_texture),
+                    );
+                }
+
+                if let Some(emissive_texture) = &submesh.textures.emissive_texture {
+                    render_encoder.set_fragment_texture(
+                        Textures_EmissiveTexture as u64,
+                        Some(&emissive_texture),
+                    );
+                }
+
+                render_encoder.set_fragment_bytes(
+                    BufferIndexMaterials as u64,
+                    std::mem::size_of::<Material>() as u64,
+                    submesh.material.as_ptr() as *const _,
+                );
+
+                // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
+                render_encoder.draw_indexed_primitives(
+                    MTLPrimitiveType::Triangle,
+                    submesh.num_elements,
+                    MTLIndexType::UInt32,
+                    &submesh.index_buffer,
+                    0,
                 );
             }
-
-            if let Some(occlusion_texture) = &submesh.textures.ambient_occlusion_texture {
-                render_encoder.set_fragment_texture(
-                    Textures_OcclusionTexture as u64,
-                    Some(&occlusion_texture),
-                );
-            }
-
-            if let Some(emissive_texture) = &submesh.textures.emissive_texture {
-                render_encoder
-                    .set_fragment_texture(Textures_EmissiveTexture as u64, Some(&emissive_texture));
-            }
-
-            render_encoder.set_fragment_bytes(
-                BufferIndexMaterials as u64,
-                std::mem::size_of::<Material>() as u64,
-                submesh.material.as_ptr() as *const _,
-            );
-
-            // render_encoder.set_triangle_fill_mode(MTLTriangleFillMode::Lines);
-            render_encoder.draw_indexed_primitives(
-                MTLPrimitiveType::Triangle,
-                submesh.num_elements,
-                MTLIndexType::UInt32,
-                &submesh.index_buffer,
-                0,
-            );
         }
     }
 

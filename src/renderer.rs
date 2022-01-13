@@ -32,27 +32,6 @@ impl Renderer {
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        // Sofa
-        // let mut model = Model::from_obj_filename("HepBurn_Sofa.obj", &device, &library);
-        // model.set_position(Vec3::new(0.0, 0.0, 0.0));
-        // model.set_rotation(Vec3::new(0.0, 180.0_f32.to_radians(), 0.0));
-        // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
-
-        // let mut model = Model::from_obj_filename("lowpoly-house.obj", 1, &device, &library);
-        // model.set_position(Vec3::new(0.0, 0.0, 0.0));
-        // model.set_rotation(Vec3::new(0.0, 45.0_f32.to_radians(), 0.0));
-
-        // let mut model = Model::from_obj_filename("train.obj", &device, &library);
-        // let mut model = Model::from_obj_filename("viking_room.obj", &device, &library);
-        // model.set_scale(Vec3::new(0.001, 0.001, 0.001));
-
-        // let mut ground = Model::from_obj_filename("plane.obj", 16, &device, &library);
-        // ground.set_scale(Vec3::new(40.0, 40.0, 40.0));
-
-        // let mut house = Model::from_obj_filename("cottage2.obj", 1, &device, &library);
-        // house.set_position(Vec3::new(0.0, 0.0, 0.0));
-        // house.set_rotation(Vec3::new(0.0, 50.0_f32.to_radians(), 0.0));
-
         let mut damaged_helmet =
             Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
         damaged_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
@@ -62,26 +41,19 @@ impl Renderer {
             300.0_f32.to_radians(),
         ));
 
-        // let mut flight_helmet =
-        //     Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);
-        // flight_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
-        // flight_helmet.set_rotation(Vec3::new(
-        //     280.0_f32.to_radians(),
-        //     270.0_f32.to_radians(),
-        //     300.0_f32.to_radians(),
-        // ));
-
         let models = vec![damaged_helmet];
 
         // generate mipmaps
         for model in models.iter() {
-            for submesh in model.submeshes.iter() {
-                if let Some(texture) = &submesh.textures.diffuse_texture {
-                    let command_buffer = command_queue.new_command_buffer();
-                    let blit_command_encoder = command_buffer.new_blit_command_encoder();
-                    blit_command_encoder.generate_mipmaps(&texture);
-                    blit_command_encoder.end_encoding();
-                    command_buffer.commit();
+            for mesh in model.meshes.iter() {
+                for submesh in mesh.submeshes.iter() {
+                    if let Some(texture) = &submesh.textures.diffuse_texture {
+                        let command_buffer = command_queue.new_command_buffer();
+                        let blit_command_encoder = command_buffer.new_blit_command_encoder();
+                        blit_command_encoder.generate_mipmaps(&texture);
+                        blit_command_encoder.end_encoding();
+                        command_buffer.commit();
+                    }
                 }
             }
         }
