@@ -47,13 +47,27 @@ impl Renderer {
         for model in models.iter() {
             for mesh in model.meshes.iter() {
                 for submesh in mesh.submeshes.iter() {
+                    let command_buffer = command_queue.new_command_buffer();
+                    let blit_command_encoder = command_buffer.new_blit_command_encoder();
+
                     if let Some(texture) = &submesh.textures.diffuse_texture {
-                        let command_buffer = command_queue.new_command_buffer();
-                        let blit_command_encoder = command_buffer.new_blit_command_encoder();
                         blit_command_encoder.generate_mipmaps(&texture);
-                        blit_command_encoder.end_encoding();
-                        command_buffer.commit();
                     }
+                    if let Some(texture) = &submesh.textures.normal_texture {
+                        blit_command_encoder.generate_mipmaps(&texture);
+                    }
+                    if let Some(texture) = &submesh.textures.metallic_roughness_texture {
+                        blit_command_encoder.generate_mipmaps(&texture);
+                    }
+                    if let Some(texture) = &submesh.textures.emissive_texture {
+                        blit_command_encoder.generate_mipmaps(&texture);
+                    }
+                    if let Some(texture) = &submesh.textures.ambient_occlusion_texture {
+                        blit_command_encoder.generate_mipmaps(&texture);
+                    }
+
+                    blit_command_encoder.end_encoding();
+                    command_buffer.commit();
                 }
             }
         }
