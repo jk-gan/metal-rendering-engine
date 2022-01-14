@@ -1,13 +1,19 @@
+use crate::{camera::Camera, model::Model};
 use glam::{Mat4, Vec3};
 
-pub struct Node {
+pub enum Node {
+    Camera(Camera),
+    Model(Model),
+}
+
+pub struct InnerNode {
     pub(crate) name: String,
     pub(crate) position: Vec3,
     pub(crate) rotation: Vec3,
     pub(crate) scale: Vec3,
 }
 
-impl Default for Node {
+impl Default for InnerNode {
     fn default() -> Self {
         Self::new(
             "untitled".to_string(),
@@ -18,7 +24,7 @@ impl Default for Node {
     }
 }
 
-impl Node {
+impl InnerNode {
     pub fn new(name: String, position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
         Self {
             name,

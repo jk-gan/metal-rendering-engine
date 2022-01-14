@@ -1,5 +1,5 @@
 [package]
-name = "metal-rendering-engine"
+name = "metal-gltf-viewer"
 authors = ["Gan Jun Kai"]
 version = "0.0.1"
 edition = "2021"
@@ -19,7 +19,4 @@ image = "0.23.14"
 metal = "0.23.1"
 obj-rs = "0.7.0"
 objc = "0.2.7"
-png = "0.17.2"
-russimp = "1.0.1"
-tobj = "3.2.0"
 winit = "0.25.0"

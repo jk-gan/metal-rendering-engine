@@ -1,7 +1,7 @@
 use cocoa::{appkit::NSView, base::id as cocoa_id};
 use core_graphics_types::geometry::CGSize;
 use metal::*;
-use metal_rendering_engine::Renderer;
+use metal_gltf_viewer::Renderer;
 use objc::{rc::autoreleasepool, runtime::YES};
 use std::mem;
 use winit::platform::macos::WindowExtMacOS;

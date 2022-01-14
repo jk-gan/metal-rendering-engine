@@ -7,11 +7,10 @@ use crate::shader_bindings::{
     Textures_BaseColorTexture, Textures_EmissiveTexture, Textures_MetallicRoughnessTexture,
     Textures_NormalTexture, Textures_OcclusionTexture, Uniforms,
 };
-use crate::{node::Node, texturable::Texturable};
+use crate::{node::InnerNode, texturable::Texturable};
 use glam::{Mat3A, Mat4, Vec2, Vec3, Vec4};
 use metal::*;
 use std::mem;
-use tobj;
 
 const TEXTURE_PATH: &str = "DamagedHelmet";
 
@@ -72,67 +71,6 @@ pub struct Submesh {
 }
 
 impl Submesh {
-    pub fn new(
-        device: &Device,
-        library: &Library,
-        material: Option<tobj::Material>,
-        vertex_buffer: Buffer,
-        index_buffer: Buffer,
-        num_elements: u64,
-    ) -> Self {
-        let (textures, pbr_material) = match material {
-            Some(ref material) => {
-                let diffuse_texture = match &material.diffuse_texture {
-                    x if x.is_empty() => None,
-                    filename => {
-                        println!("diffuse_texture_filename: {}", filename);
-                        let diffuse_texture = Self::load_texture(filename, &device)
-                            .expect("Unable to load diffuse texture");
-                        Some(diffuse_texture)
-                    }
-                };
-
-                let normal_texture = match &material.normal_texture {
-                    x if x.is_empty() => None,
-                    filename => {
-                        println!("normal_texture_filename: {}", filename);
-                        let normal_texture = Self::load_texture(filename, &device)
-                            .expect("Unable to load normal texture");
-                        Some(normal_texture)
-                    }
-                };
-
-                let textures = Textures::new(diffuse_texture, normal_texture, None, None, None);
-                let diffuse = material.diffuse;
-                let specular = material.specular;
-                let shininess = material.shininess;
-
-                (
-                    textures,
-                    Material::new(
-                        [diffuse[0], diffuse[1], diffuse[2], 1.0],
-                        [specular[0], specular[1], specular[2], 1.0],
-                        shininess,
-                        0.0,
-                        0.0,
-                    ),
-                )
-            }
-            None => (Textures::default(), Material::default()),
-        };
-
-        let pipeline_state = Submesh::build_pipeline_state(library, device, &textures);
-
-        Self {
-            vertex_buffer,
-            index_buffer,
-            num_elements,
-            textures,
-            pipeline_state,
-            material: [pbr_material],
-        }
-    }
-
     pub fn from_gltf(
         device: &Device,
         library: &Library,
@@ -498,174 +436,26 @@ impl Mesh {
 }
 
 pub struct Model {
-    node: Node,
+    inner_node: InnerNode,
     pub(crate) meshes: Vec<Mesh>,
     pub(crate) tiling: u32,
     pub(crate) sampler_state: SamplerState,
 }
 
 impl Model {
-    pub fn new(node: Node, meshes: Vec<Mesh>, tiling: u32, sampler_state: SamplerState) -> Model {
+    pub fn new(
+        inner_node: InnerNode,
+        meshes: Vec<Mesh>,
+        tiling: u32,
+        sampler_state: SamplerState,
+    ) -> Model {
         Model {
-            node,
+            inner_node,
             meshes,
             tiling,
             sampler_state,
         }
     }
-
-    // pub fn from_obj_filename(name: &str, tiling: u32, device: &Device, library: &Library) -> Model {
-    //     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-    //         .join(format!("resources/{}", name));
-    //     let (models, materials) = tobj::load_obj(
-    //         path.as_path(),
-    //         &tobj::LoadOptions {
-    //             triangulate: true,
-    //             single_index: true,
-    //             // ignore_points: true,
-    //             // ignore_lines: true,
-    //             ..Default::default()
-    //         },
-    //         // &tobj::LoadOptions::default(),
-    //     )
-    //     .expect(format!("Failed to load {} file", name).as_str());
-
-    //     let materials = match materials {
-    //         Ok(materials) => Some(materials),
-    //         Err(_e) => {
-    //             println!("Failed to load {} file", name);
-    //             None
-    //         }
-    //     };
-
-    //     let mut submeshes: Vec<Submesh> = vec![];
-
-    //     for model in models {
-    //         let mut material = None;
-    //         if let Some(id) = model.mesh.material_id {
-    //             material = match materials {
-    //                 Some(ref materials) => Some(materials[id].clone()),
-    //                 None => None,
-    //             };
-    //         }
-
-    //         let mut vertices = Vec::new();
-    //         for i in 0..model.mesh.positions.len() / 3 {
-    //             vertices.push(ModelVertex {
-    //                 position: [
-    //                     model.mesh.positions[i * 3],
-    //                     model.mesh.positions[i * 3 + 1],
-    //                     model.mesh.positions[i * 3 + 2],
-    //                 ],
-    //                 normal: [
-    //                     model.mesh.normals[i * 3],
-    //                     model.mesh.normals[i * 3 + 1],
-    //                     model.mesh.normals[i * 3 + 2],
-    //                 ],
-    //                 text_coords: [model.mesh.texcoords[i * 2], model.mesh.texcoords[i * 2 + 1]],
-    //                 tangent: [0.0; 3],
-    //                 bitangent: [0.0; 3],
-    //             });
-    //         }
-
-    //         let indices = &model.mesh.indices;
-    //         let mut triangles_included = (0..vertices.len()).collect::<Vec<_>>();
-    //         // Calculate tangents and bitangets. We're going to
-    //         // use the triangles, so we need to loop through the
-    //         // indices in chunks of 3
-    //         for c in indices.chunks(3) {
-    //             let v0 = vertices[c[0] as usize];
-    //             let v1 = vertices[c[1] as usize];
-    //             let v2 = vertices[c[2] as usize];
-
-    //             let pos0: Vec3 = v0.position.into();
-    //             let pos1: Vec3 = v1.position.into();
-    //             let pos2: Vec3 = v2.position.into();
-
-    //             let uv0: Vec2 = v0.text_coords.into();
-    //             let uv1: Vec2 = v1.text_coords.into();
-    //             let uv2: Vec2 = v2.text_coords.into();
-
-    //             // Calculate the edges of the triangle
-    //             let delta_pos1 = pos1 - pos0;
-    //             let delta_pos2 = pos2 - pos0;
-
-    //             // This will give us a direction to calculate the
-    //             // tangent and bitangent
-    //             let delta_uv1 = uv1 - uv0;
-    //             let delta_uv2 = uv2 - uv0;
-
-    //             // Solving the following system of equations will
-    //             // give us the tangent and bitangent.
-    //             //     delta_pos1 = delta_uv1.x * T + delta_u.y * B
-    //             //     delta_pos2 = delta_uv2.x * T + delta_uv2.y * B
-    //             // Luckily, the place I found this equation provided
-    //             // the solution!
-    //             let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
-    //             let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
-    //             let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * r;
-
-    //             // We'll use the same tangent/bitangent for each vertex in the triangle
-    //             vertices[c[0] as usize].tangent =
-    //                 (tangent + Vec3::from(vertices[c[0] as usize].tangent)).into();
-    //             vertices[c[1] as usize].tangent =
-    //                 (tangent + Vec3::from(vertices[c[1] as usize].tangent)).into();
-    //             vertices[c[2] as usize].tangent =
-    //                 (tangent + Vec3::from(vertices[c[2] as usize].tangent)).into();
-    //             vertices[c[0] as usize].bitangent =
-    //                 (bitangent + Vec3::from(vertices[c[0] as usize].bitangent)).into();
-    //             vertices[c[1] as usize].bitangent =
-    //                 (bitangent + Vec3::from(vertices[c[1] as usize].bitangent)).into();
-    //             vertices[c[2] as usize].bitangent =
-    //                 (bitangent + Vec3::from(vertices[c[2] as usize].bitangent)).into();
-
-    //             // Used to average the tangents/bitangents
-    //             triangles_included[c[0] as usize] += 1;
-    //             triangles_included[c[1] as usize] += 1;
-    //             triangles_included[c[2] as usize] += 1;
-    //         }
-
-    //         // Average the tangents/bitangents
-    //         for (i, n) in triangles_included.into_iter().enumerate() {
-    //             let denom = 1.0 / n as f32;
-    //             let mut v = &mut vertices[i];
-    //             v.tangent = (Vec3::from(v.tangent) * denom).normalize().into();
-    //             v.bitangent = (Vec3::from(v.bitangent) * denom).normalize().into();
-    //         }
-
-    //         let vertex_buffer = device.new_buffer_with_data(
-    //             vertices.as_ptr() as *const _,
-    //             mem::size_of::<ModelVertex>() as u64 * vertices.len() as u64,
-    //             MTLResourceOptions::CPUCacheModeDefaultCache
-    //                 | MTLResourceOptions::StorageModeManaged,
-    //         );
-    //         let index_buffer = device.new_buffer_with_data(
-    //             indices.as_ptr() as *const _,
-    //             mem::size_of::<u32>() as u64 * indices.len() as u64,
-    //             MTLResourceOptions::CPUCacheModeDefaultCache
-    //                 | MTLResourceOptions::StorageModeManaged,
-    //         );
-    //         let num_elements = indices.len() as u64;
-
-    //         let submesh = Submesh::new(
-    //             &device,
-    //             &library,
-    //             material,
-    //             vertex_buffer,
-    //             index_buffer,
-    //             num_elements,
-    //         );
-    //         submeshes.push(submesh);
-    //     }
-
-    //     // let pipeline_state = Model::build_pipeline_state(library, device);
-    //     let sampler_state = Model::build_sampler_state(device);
-
-    //     let mut node = Node::default();
-    //     node.name = name.to_string();
-
-    //     Model::new(node, submeshes, tiling, sampler_state)
-    // }
 
     pub fn from_gltf_filename(
         name: &str,
@@ -690,30 +480,30 @@ impl Model {
 
         let sampler_state = Model::build_sampler_state(device);
 
-        let mut node = Node::default();
-        node.name = name.to_string();
+        let mut inner_node = InnerNode::default();
+        inner_node.name = name.to_string();
 
-        Model::new(node, meshes, tiling, sampler_state)
+        Model::new(inner_node, meshes, tiling, sampler_state)
     }
 
     pub fn set_position(&mut self, position: Vec3) {
-        self.node.position = position;
+        self.inner_node.position = position;
     }
 
     pub fn name(&self) -> &String {
-        &self.node.name
+        &self.inner_node.name
     }
 
     pub fn set_rotation(&mut self, rotation: Vec3) {
-        self.node.rotation = rotation;
+        self.inner_node.rotation = rotation;
     }
 
     pub fn set_scale(&mut self, scale: Vec3) {
-        self.node.scale = scale;
+        self.inner_node.scale = scale;
     }
 
     pub fn model_matrix(&self) -> Mat4 {
-        self.node.model_matrix()
+        self.inner_node.model_matrix()
     }
 
     pub fn render(
