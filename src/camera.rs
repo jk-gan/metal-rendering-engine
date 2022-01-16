@@ -1,4 +1,4 @@
-use crate::node::Node;
+use crate::node::InnerNode;
 use glam::{Mat3, Mat4, Vec3};
 
 pub trait CameraFunction {
@@ -6,14 +6,14 @@ pub trait CameraFunction {
     fn rotate(&mut self, delta: (f32, f32));
 }
 
-struct Camera {
+pub struct Camera {
     fov_degrees: f32,
     aspect_ratio: f32,
     z_near: f32,
     z_far: f32,
     // projection_matrix: Mat4,
     // view_matrix: Mat4,
-    node: Node,
+    inner_node: InnerNode,
 }
 
 impl Default for Camera {
@@ -22,27 +22,26 @@ impl Default for Camera {
         let aspect_ratio = 1080.0 / 720.0;
         let z_near = 0.001;
         let z_far = 100.0;
-        let node = Node::default();
-        // let projection_matrix = Mat4::perspective_lh(fov_degrees, aspect_ratio, z_near, z_far);
-        // let translate_matrix = Mat4::from_translation(node.position);
-        // let rotate_matrix = Mat4::from_rotation_x(node.rotation.x)
-        //     * Mat4::from_rotation_y(node.rotation.y)
-        //     * Mat4::from_rotation_z(node.rotation.z);
-        // let scale_matrix = Mat4::from_scale(node.scale);
-        // let view_matrix = (translate_matrix * rotate_matrix * scale_matrix).inverse();
+        let inner_node = InnerNode::default();
 
-        Self::new(fov_degrees, aspect_ratio, z_near, z_far, node)
+        Self::new(fov_degrees, aspect_ratio, z_near, z_far, inner_node)
     }
 }
 
 impl Camera {
-    pub fn new(fov_degrees: f32, aspect_ratio: f32, z_near: f32, z_far: f32, node: Node) -> Self {
+    pub fn new(
+        fov_degrees: f32,
+        aspect_ratio: f32,
+        z_near: f32,
+        z_far: f32,
+        inner_node: InnerNode,
+    ) -> Self {
         Self {
             fov_degrees,
             aspect_ratio,
             z_near,
             z_far,
-            node,
+            inner_node,
         }
     }
 
@@ -60,12 +59,12 @@ impl Camera {
     }
 
     pub fn view_matrix(&self) -> Mat4 {
-        let translate_matrix = Mat4::from_translation(self.node.position);
-        let rotate_matrix = Mat4::from_rotation_x(self.node.rotation.x)
-            * Mat4::from_rotation_y(self.node.rotation.y)
-            * Mat4::from_rotation_z(self.node.rotation.z);
-        let scale_matrix = Mat4::from_scale(self.node.scale);
-        (translate_matrix * rotate_matrix * scale_matrix).inverse()
+        let translate_matrix = Mat4::from_translation(self.inner_node.position);
+        let rotate_matrix = Mat4::from_rotation_x(self.inner_node.rotation.x)
+            * Mat4::from_rotation_y(self.inner_node.rotation.y)
+            * Mat4::from_rotation_z(self.inner_node.rotation.z);
+        let scale_matrix = Mat4::from_scale(self.inner_node.scale);
+        (translate_matrix * scale_matrix * rotate_matrix).inverse()
     }
 }
 
@@ -104,12 +103,12 @@ impl ArcballCamera {
     }
 
     pub fn set_rotation(&mut self, rotation: Vec3) {
-        self.camera.node.rotation = rotation;
+        self.camera.inner_node.rotation = rotation;
         self.view_matrix = self.update_view_matrix();
     }
 
     fn set_position(&mut self, position: Vec3) {
-        self.camera.node.position = position;
+        self.camera.inner_node.position = position;
     }
 
     pub fn set_aspect_ratio(&mut self, aspect_ratio: f32) {
@@ -117,11 +116,11 @@ impl ArcballCamera {
     }
 
     pub fn rotation(&self) -> &Vec3 {
-        &self.camera.node.rotation
+        &self.camera.inner_node.rotation
     }
 
     pub fn position(&self) -> &Vec3 {
-        &self.camera.node.position
+        &self.camera.inner_node.position
     }
 
     pub fn view_matrix(&self) -> &Mat4 {
@@ -138,8 +137,8 @@ impl ArcballCamera {
             self.target.y,
             self.target.z - self.distance,
         ));
-        let rotate_matrix = Mat4::from_rotation_x(-self.rotation().x)
-            * Mat4::from_rotation_y(self.rotation().y)
+        let rotate_matrix = Mat4::from_rotation_y(self.rotation().y)
+            * Mat4::from_rotation_x(-self.rotation().x)
             * Mat4::from_rotation_z(0.0);
         let matrix = (rotate_matrix * translate_matrix).inverse();
         self.set_position(Mat3::from_mat4(rotate_matrix) * -matrix.col(3).truncate());
@@ -151,12 +150,13 @@ impl ArcballCamera {
 impl CameraFunction for ArcballCamera {
     fn zoom(&mut self, delta: f32) {
         let sensitivity = 0.05;
-        self.set_distance(self.distance - (delta * sensitivity))
+        self.set_distance(self.distance - (delta * sensitivity));
     }
 
     fn rotate(&mut self, delta: (f32, f32)) {
-        let sensitivity = 0.13;
+        println!("delta: {delta:?}");
 
+        let sensitivity = 0.13;
         let mut rotation = Vec3::new(self.rotation().x, self.rotation().y, self.rotation().z);
 
         rotation.y += delta.0.to_radians() * sensitivity;

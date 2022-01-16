@@ -464,7 +464,7 @@ impl Model {
         library: &Library,
     ) -> Model {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("resources/{}", name));
+            .join(format!("assets/models/{}", name));
         let (gltf, buffers, _) = gltf::import(path.as_path()).expect("Failed to load gltf file");
 
         let mut meshes: Vec<Mesh> = vec![];

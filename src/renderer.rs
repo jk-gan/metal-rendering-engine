@@ -29,7 +29,7 @@ impl Renderer {
         // let library_path =
         //     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
         let library_path =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/pbr.metallib");
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
         let mut damaged_helmet =

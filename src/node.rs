@@ -1,10 +1,17 @@
 use crate::{camera::Camera, model::Model};
 use glam::{Mat4, Vec3};
+use std::rc::Rc;
 
-pub enum Node {
+pub enum NodeType {
     Camera(Camera),
     Model(Model),
 }
+
+pub struct Node {
+    parent: Rc<Node>,
+    children: Vec<Node>
+}
+
 
 pub struct InnerNode {
     pub(crate) name: String,

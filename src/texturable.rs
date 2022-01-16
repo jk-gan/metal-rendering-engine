@@ -1,6 +1,5 @@
 use image;
-use image::error::ImageResult;
-use image::GenericImageView;
+use image::{error::ImageResult, GenericImageView};
 use metal::*;
 
 pub trait Texturable {
@@ -23,7 +22,7 @@ pub trait Texturable {
         println!("image_name: {}", image_name);
 
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join(format!("resources/{}", image_name));
+            .join(format!("assets/models/{}", image_name));
 
         let img = image::open(path)?;
         let (width, height) = img.dimensions();
