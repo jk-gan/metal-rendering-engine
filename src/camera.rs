@@ -154,9 +154,7 @@ impl CameraFunction for ArcballCamera {
     }
 
     fn rotate(&mut self, delta: (f32, f32)) {
-        println!("delta: {delta:?}");
-
-        let sensitivity = 0.13;
+        let sensitivity = 0.18;
         let mut rotation = Vec3::new(self.rotation().x, self.rotation().y, self.rotation().z);
 
         rotation.y += delta.0.to_radians() * sensitivity;

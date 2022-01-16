@@ -8,7 +8,7 @@ use crate::shader_bindings::{
     Textures_NormalTexture, Textures_OcclusionTexture, Uniforms,
 };
 use crate::{node::InnerNode, texturable::Texturable};
-use glam::{Mat3A, Mat4, Vec2, Vec3, Vec4};
+use glam::{f32::Quat, Mat3A, Mat4, Vec2, Vec3, Vec4};
 use metal::*;
 use std::mem;
 
@@ -483,7 +483,30 @@ impl Model {
         let mut inner_node = InnerNode::default();
         inner_node.name = name.to_string();
 
-        Model::new(inner_node, meshes, tiling, sampler_state)
+        let mut model = Model::new(inner_node, meshes, tiling, sampler_state);
+
+        let first_node = gltf.nodes().nth(0).unwrap();
+        println!("transform: {:?}", first_node.transform());
+
+        match first_node.transform() {
+            gltf::scene::Transform::Matrix { matrix } => {
+                model.apply_transform_matrix(Mat4::from_cols_array_2d(&matrix));
+            }
+            gltf::scene::Transform::Decomposed {
+                translation,
+                rotation,
+                scale,
+            } => {
+                let transform_matrix = Mat4::from_scale_rotation_translation(
+                    Vec3::from(scale),
+                    Quat::from_array(rotation),
+                    Vec3::from(translation),
+                );
+                model.apply_transform_matrix(transform_matrix);
+            }
+        }
+
+        model
     }
 
     pub fn set_position(&mut self, position: Vec3) {
@@ -500,6 +523,32 @@ impl Model {
 
     pub fn set_scale(&mut self, scale: Vec3) {
         self.inner_node.scale = scale;
+    }
+
+    pub fn apply_translation(&mut self, translation: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_rotation(&mut self, rotation: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_scale(&mut self, scale: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_transform_matrix(&mut self, transform_matrix: Mat4) {
+        let current_position = self.inner_node.position;
+        let current_rotation = self.inner_node.rotation;
+        let current_scale = self.inner_node.scale;
+
+        let (scale, rotation, translation) = transform_matrix.to_scale_rotation_translation();
+
+        self.inner_node.position =
+            (Mat4::from_translation(translation) * Vec4::from((current_position, 1.0))).truncate();
+        self.inner_node.rotation = rotation.to_scaled_axis() + Vec3::from(current_rotation);
+        self.inner_node.scale =
+            (Mat4::from_scale(scale) * Vec4::from((current_scale, 1.0))).truncate();
     }
 
     pub fn model_matrix(&self) -> Mat4 {

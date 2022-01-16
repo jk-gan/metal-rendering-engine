@@ -23,23 +23,13 @@ impl Renderer {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
-        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.0, 0.0), 2.5);
-        camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
-
         // let library_path =
         //     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
-        let library_path =
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/shaders/pbr.metallib");
+        let library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let mut damaged_helmet =
-            Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
-        damaged_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
-        damaged_helmet.set_rotation(Vec3::new(
-            280.0_f32.to_radians(),
-            180.0_f32.to_radians(),
-            300.0_f32.to_radians(),
-        ));
+        let (camera, damaged_helmet) = Self::read_gltf_asset(&device, &library);
 
         let models = vec![damaged_helmet];
 
@@ -192,5 +182,21 @@ impl Renderer {
         descriptor.set_depth_compare_function(MTLCompareFunction::Less);
         descriptor.set_depth_write_enabled(true);
         device.new_depth_stencil_state(&descriptor)
+    }
+
+    fn read_gltf_asset(device: &Device, library: &Library) -> (ArcballCamera, Model) {
+        let damaged_helmet =
+            Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
+        // damaged_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
+        // damaged_helmet.set_rotation(Vec3::new(
+        //     280.0_f32.to_radians(),
+        //     180.0_f32.to_radians(),
+        //     300.0_f32.to_radians(),
+        // ));
+
+        let camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.0, 0.0), 2.5);
+        // camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
+
+        (camera, damaged_helmet)
     }
 }
