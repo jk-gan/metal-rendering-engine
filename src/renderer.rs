@@ -123,8 +123,8 @@ impl Renderer {
             .unwrap();
         color_attachment.set_texture(Some(&drawable.texture()));
         color_attachment.set_load_action(MTLLoadAction::Clear);
-        // color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-        color_attachment.set_clear_color(MTLClearColor::new(0.93, 0.97, 1.0, 1.0));
+        color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
+        // color_attachment.set_clear_color(MTLClearColor::new(0.93, 0.97, 1.0, 1.0));
         color_attachment.set_store_action(MTLStoreAction::Store);
 
         let depth_buffer_descriptor = TextureDescriptor::new();
@@ -185,18 +185,15 @@ impl Renderer {
     }
 
     fn read_gltf_asset(device: &Device, library: &Library) -> (ArcballCamera, Model) {
-        let damaged_helmet =
-            Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
-        // damaged_helmet.set_position(Vec3::new(0.0, 0.0, 0.0));
-        // damaged_helmet.set_rotation(Vec3::new(
-        //     280.0_f32.to_radians(),
-        //     180.0_f32.to_radians(),
-        //     300.0_f32.to_radians(),
-        // ));
+        // let damaged_helmet =
+        //     Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
+        let model =
+            Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);
 
-        let camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.0, 0.0), 2.5);
-        // camera.set_rotation(Vec3::new(-10.0_f32.to_radians(), 0.0, 0.0));
+        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.3, 0.0), 1.0);
+        camera.set_position(Vec3::new(0.0, 0.0, 2.5));
+        camera.set_rotation(Vec3::new(0.0, 160.0_f32.to_radians(), 0.0));
 
-        (camera, damaged_helmet)
+        (camera, model)
     }
 }

@@ -107,7 +107,7 @@ impl ArcballCamera {
         self.view_matrix = self.update_view_matrix();
     }
 
-    fn set_position(&mut self, position: Vec3) {
+    pub fn set_position(&mut self, position: Vec3) {
         self.camera.inner_node.position = position;
     }
 

@@ -12,7 +12,8 @@ use glam::{f32::Quat, Mat3A, Mat4, Vec2, Vec3, Vec4};
 use metal::*;
 use std::mem;
 
-const TEXTURE_PATH: &str = "DamagedHelmet";
+// const TEXTURE_PATH: &str = "DamagedHelmet";
+const TEXTURE_PATH: &str = "FlightHelmet";
 
 #[derive(Debug, Copy, Clone)]
 pub struct ModelVertex {
@@ -83,61 +84,53 @@ impl Submesh {
         let mut pbr_material = Material::default();
 
         if let Some(material) = material {
-            let normal_texture_source = match material.normal_texture() {
-                Some(info) => {
-                    println!("normal text_coord index: {}", info.tex_coord());
-                    match info.texture().source().source() {
-                        gltf::image::Source::Uri { uri, .. } => uri,
-                        x => {
-                            println!("x = {:?}", x);
-                            todo!()
-                        }
+            let normal_texture_source = material.normal_texture().map(|info| {
+                println!("normal text_coord index: {}", info.tex_coord());
+                match info.texture().source().source() {
+                    gltf::image::Source::Uri { uri, .. } => uri,
+                    x => {
+                        println!("x = {:?}", x);
+                        todo!()
                     }
                 }
-                None => "",
-            };
-            let normal_texture = Self::load_texture(
-                format!("{}/{}", TEXTURE_PATH, normal_texture_source).as_ref(),
-                &device,
-            )
-            .expect("Unable to load normal texture");
-            let occlusion_texture_source = match material.occlusion_texture() {
-                Some(info) => {
-                    println!("occlusion text_coord index: {}", info.tex_coord());
-                    match info.texture().source().source() {
-                        gltf::image::Source::Uri { uri, .. } => uri,
-                        x => {
-                            println!("x = {:?}", x);
-                            todo!()
-                        }
-                    }
-                }
-                None => "",
-            };
-            let occlusion_texture = Self::load_texture(
-                format!("{}/{}", TEXTURE_PATH, occlusion_texture_source).as_ref(),
-                &device,
-            )
-            .expect("Unable to load occlusion texture");
+            });
 
-            let emissive_texture_source = match material.emissive_texture() {
-                Some(info) => {
-                    println!("emissive text_coord index: {}", info.tex_coord());
-                    match info.texture().source().source() {
-                        gltf::image::Source::Uri { uri, .. } => uri,
-                        x => {
-                            println!("x = {:?}", x);
-                            todo!()
-                        }
+            let normal_texture = normal_texture_source.map(|source| {
+                Self::load_texture(format!("{}/{}", TEXTURE_PATH, source).as_ref(), &device)
+                    .expect("Unable to load normal texture")
+            });
+
+            let occlusion_texture_source = material.occlusion_texture().map(|info| {
+                println!("occlusion text_coord index: {}", info.tex_coord());
+                match info.texture().source().source() {
+                    gltf::image::Source::Uri { uri, .. } => uri,
+                    x => {
+                        println!("x = {:?}", x);
+                        todo!()
                     }
                 }
-                None => "",
-            };
-            let emissive_texture = Self::load_texture(
-                format!("{}/{}", TEXTURE_PATH, emissive_texture_source).as_ref(),
-                &device,
-            )
-            .expect("Unable to load emissive texture");
+            });
+
+            let occlusion_texture = occlusion_texture_source.map(|source| {
+                Self::load_texture(format!("{}/{}", TEXTURE_PATH, source).as_ref(), &device)
+                    .expect("Unable to load occlusion texture")
+            });
+
+            let emissive_texture_source = material.emissive_texture().map(|info| {
+                println!("emissive text_coord index: {}", info.tex_coord());
+                match info.texture().source().source() {
+                    gltf::image::Source::Uri { uri, .. } => uri,
+                    x => {
+                        println!("x = {:?}", x);
+                        todo!()
+                    }
+                }
+            });
+
+            let emissive_texture = emissive_texture_source.map(|source| {
+                Self::load_texture(format!("{}/{}", TEXTURE_PATH, source).as_ref(), &device)
+                    .expect("Unable to load emissive texture")
+            });
 
             let emissive_factor = material.emissive_factor();
             println!("emissive factor: {:?}", emissive_factor);
@@ -146,9 +139,10 @@ impl Submesh {
             let base_color_factor = pbr_metallic_roughness.base_color_factor();
             let metallic_factor = pbr_metallic_roughness.metallic_factor();
             let roughness_factor = pbr_metallic_roughness.roughness_factor();
-            let base_color_texture_source = match pbr_metallic_roughness.base_color_texture() {
-                Some(info) => {
-                    println!("base text_coord index: {}", info.tex_coord());
+
+            let base_color_texture_source =
+                pbr_metallic_roughness.base_color_texture().map(|info| {
+                    println!("base color text_coord index: {}", info.tex_coord());
                     match info.texture().source().source() {
                         gltf::image::Source::Uri { uri, .. } => uri,
                         x => {
@@ -156,40 +150,37 @@ impl Submesh {
                             todo!()
                         }
                     }
-                }
-                None => "",
-            };
-            let base_color_texture = Self::load_texture(
-                format!("{}/{}", TEXTURE_PATH, base_color_texture_source).as_ref(),
-                &device,
-            )
-            .expect("Unable to load base color texture");
-            let metallic_roughness_texture_source =
-                match pbr_metallic_roughness.metallic_roughness_texture() {
-                    Some(info) => {
-                        println!("metallic roughness text_coord index: {}", info.tex_coord());
-                        match info.texture().source().source() {
-                            gltf::image::Source::Uri { uri, .. } => uri,
-                            x => {
-                                println!("x = {:?}", x);
-                                todo!()
-                            }
+                });
+
+            let base_color_texture = base_color_texture_source.map(|source| {
+                Self::load_texture(format!("{}/{}", TEXTURE_PATH, source).as_ref(), &device)
+                    .expect("Unable to load base color texture")
+            });
+
+            let metallic_roughness_texture_source = pbr_metallic_roughness
+                .metallic_roughness_texture()
+                .map(|info| {
+                    println!("metallic roughness text_coord index: {}", info.tex_coord());
+                    match info.texture().source().source() {
+                        gltf::image::Source::Uri { uri, .. } => uri,
+                        x => {
+                            println!("x = {:?}", x);
+                            todo!()
                         }
                     }
-                    None => "",
-                };
-            let metallic_roughness_texture = Self::load_texture(
-                format!("{}/{}", TEXTURE_PATH, metallic_roughness_texture_source).as_ref(),
-                &device,
-            )
-            .expect("Unable to load metallic roughness texture");
+                });
+
+            let metallic_roughness_texture = metallic_roughness_texture_source.map(|source| {
+                Self::load_texture(format!("{}/{}", TEXTURE_PATH, source).as_ref(), &device)
+                    .expect("Unable to load metallic roughness texture")
+            });
 
             textures = Textures::new(
-                Some(base_color_texture),
-                Some(normal_texture),
-                Some(metallic_roughness_texture),
-                Some(occlusion_texture),
-                Some(emissive_texture),
+                base_color_texture,
+                normal_texture,
+                metallic_roughness_texture,
+                occlusion_texture,
+                emissive_texture,
             );
             pbr_material = Material::new(
                 base_color_factor,
@@ -279,6 +270,7 @@ impl Texturable for Submesh {}
 
 pub struct Mesh {
     name: String,
+    inner_node: InnerNode,
     pub(crate) submeshes: Vec<Submesh>,
 }
 
@@ -427,11 +419,59 @@ impl Mesh {
             );
             submeshes.push(submesh);
         }
+        let inner_node = InnerNode::default();
 
         Self {
             name: mesh.name().unwrap_or("untitled").to_string(),
             submeshes,
+            inner_node,
         }
+    }
+
+    pub fn set_position(&mut self, position: Vec3) {
+        self.inner_node.position = position;
+    }
+
+    pub fn name(&self) -> &String {
+        &self.inner_node.name
+    }
+
+    pub fn set_rotation(&mut self, rotation: Vec3) {
+        self.inner_node.rotation = rotation;
+    }
+
+    pub fn set_scale(&mut self, scale: Vec3) {
+        self.inner_node.scale = scale;
+    }
+
+    pub fn apply_translation(&mut self, translation: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_rotation(&mut self, rotation: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_scale(&mut self, scale: Mat4) {
+        todo!()
+    }
+
+    pub fn apply_transform_matrix(&mut self, transform_matrix: Mat4) {
+        let current_position = self.inner_node.position;
+        let current_rotation = self.inner_node.rotation;
+        let current_scale = self.inner_node.scale;
+
+        let (scale, rotation, translation) = transform_matrix.to_scale_rotation_translation();
+
+        self.inner_node.position =
+            (Mat4::from_translation(translation) * Vec4::from((current_position, 1.0))).truncate();
+        self.inner_node.rotation = rotation.to_scaled_axis() + Vec3::from(current_rotation);
+        self.inner_node.scale =
+            (Mat4::from_scale(scale) * Vec4::from((current_scale, 1.0))).truncate();
+    }
+
+    pub fn model_matrix(&self) -> Mat4 {
+        self.inner_node.model_matrix()
     }
 }
 
@@ -469,13 +509,26 @@ impl Model {
 
         let mut meshes: Vec<Mesh> = vec![];
 
-        for gltf_mesh in gltf.meshes() {
-            println!("Mesh #{}", gltf_mesh.index());
-            println!("name: {:?}", gltf_mesh.name());
-            let material = gltf.materials().nth(gltf_mesh.index());
+        println!("nodes len: {}", gltf.nodes().len());
+        println!("cameras len: {}", gltf.cameras().len());
+        println!("materials len: {}", gltf.materials().len());
+        println!("meshes len: {}", gltf.meshes().len());
 
-            let mesh = Mesh::from_gltf(device, library, &buffers, gltf_mesh, material);
-            meshes.push(mesh);
+        for gltf_node in gltf.nodes() {
+            println!("");
+            println!("transform: {:?}", gltf_node.transform());
+            println!("name: {:?}", gltf_node.name());
+            println!("children len: {:?}", gltf_node.children().len());
+            if let Some(gltf_mesh) = gltf_node.mesh() {
+                println!("Mesh #{}", gltf_mesh.index());
+                println!("name: {:?}", gltf_mesh.name());
+                let material = gltf.materials().nth(gltf_mesh.index());
+
+                let mesh = Mesh::from_gltf(device, library, &buffers, gltf_mesh, material);
+                meshes.push(mesh);
+            } else if let Some(gltf_camera) = gltf_node.camera() {
+                println!("camera: {:?}", gltf_camera);
+            }
         }
 
         let sampler_state = Model::build_sampler_state(device);

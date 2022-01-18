@@ -4,21 +4,6 @@ use metal::*;
 
 pub trait Texturable {
     fn load_texture(image_name: &str, device: &Device) -> ImageResult<Texture> {
-        if image_name == "DamagedHelmet/" {
-            let texture_descriptor = TextureDescriptor::new();
-            texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
-            // texture_descriptor.set_width(1000 as u64);
-            // texture_descriptor.set_height(1000 as u64);
-            // texture_descriptor.set_depth(1);
-
-            return Ok(device.new_texture(&texture_descriptor));
-        }
-
-        let image_name = match image_name.contains(".png") || image_name.contains(".jpg") {
-            true => image_name.to_string(),
-            false => format!("{}.png", image_name),
-        };
-
         println!("image_name: {}", image_name);
 
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
