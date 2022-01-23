@@ -12,6 +12,33 @@ constant bool hasEmissiveTexture [[function_constant(4)]];
 
 constant float pi = 3.1415926535897932384626433832795;
 
+struct SkyboxVertexIn {
+  float4 position [[attribute(Position)]];
+  // float4 normal [[attribute(Normal)]];
+};
+
+struct SkyboxVertexOut {
+  float4 position [[position]];
+  float3 texCoords;
+};
+
+vertex SkyboxVertexOut vertex_skybox(const SkyboxVertexIn vertexIn [[stage_in]], constant float4x4 &vp [[buffer(1)]]) {
+  SkyboxVertexOut out {
+      .position = (vp * vertexIn.position).xyww,
+      // .position = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix * vertexIn.position,
+      .texCoords = vertexIn.position.xyz
+  };
+  return out;
+}
+
+fragment half4 fragment_skybox(SkyboxVertexOut in [[stage_in]], constant Uniforms &uniforms [[buffer(1)]], 
+                                    texturecube<half> cubeMap [[texture(CubeMap)]]) {
+  float3 texCoords = float3(in.texCoords.x, in.texCoords.y, -in.texCoords.z);
+  constexpr sampler defaultSampler (filter::linear);
+  return cubeMap.sample(defaultSampler, texCoords);
+  /* return half4(1, 1, 0, 1); */
+}
+
 struct VertexIn {
   float4 position [[attribute(Position)]];
   float3 normal [[attribute(Normal)]];
@@ -159,7 +186,7 @@ float3 render(Lighting lighting) {
   // specular roughness
   float specularRoughness = lighting.roughness * (1.0 - lighting.metallic) + lighting.metallic;
   
-  // Distribution
+  // Normal Distribution Function
   float Ds;
   if (specularRoughness >= 1.0) {
     Ds = 1.0 / pi;
@@ -174,7 +201,6 @@ float3 render(Lighting lighting) {
   float3 Cspec0 = float3(1.0);
   float fresnel = pow(clamp(1.0 - hDotl, 0.0, 1.0), 5.0);
   float3 Fs = float3(mix(float3(Cspec0), float3(1), fresnel));
-  
   
   // Geometry
   float alphaG = (specularRoughness * 0.5 + 0.5) * (specularRoughness * 0.5 + 0.5);

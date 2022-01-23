@@ -34,17 +34,6 @@ pub trait Texturable {
                     new_buf.push(pixel[0]);
                     new_buf.push(255);
                 }
-
-                let region = MTLRegion {
-                    origin: MTLOrigin { x: 0, y: 0, z: 0 },
-                    size: MTLSize {
-                        width: width as u64,
-                        height: height as u64,
-                        depth: 1,
-                    },
-                };
-                texture.replace_region(region, 0, new_buf.as_ptr() as _, width as u64 * 4);
-                Ok(texture)
             }
             image::DynamicImage::ImageRgba8(img) => {
                 for pixel in img.pixels() {
@@ -53,21 +42,21 @@ pub trait Texturable {
                     new_buf.push(pixel[0]);
                     new_buf.push(pixel[3]);
                 }
-
-                let region = MTLRegion {
-                    origin: MTLOrigin { x: 0, y: 0, z: 0 },
-                    size: MTLSize {
-                        width: width as u64,
-                        height: height as u64,
-                        depth: 1,
-                    },
-                };
-                texture.replace_region(region, 0, new_buf.as_ptr() as _, width as u64 * 4);
-                Ok(texture)
             }
             _ => {
                 todo!()
             }
-        }
+        };
+
+        let region = MTLRegion {
+            origin: MTLOrigin { x: 0, y: 0, z: 0 },
+            size: MTLSize {
+                width: width as u64,
+                height: height as u64,
+                depth: 1,
+            },
+        };
+        texture.replace_region(region, 0, new_buf.as_ptr() as _, width as u64 * 4);
+        Ok(texture)
     }
 }

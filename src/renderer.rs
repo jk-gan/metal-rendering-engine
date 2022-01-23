@@ -1,25 +1,32 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::shader_bindings::{
-    BufferIndices_BufferIndexLights as BufferIndexLights, FragmentUniforms, Light, Uniforms,
+    BufferIndices_BufferIndexLights as BufferIndexLights, FragmentUniforms, Light,
+    Textures_CubeMap, Uniforms,
 };
-use crate::{lighting::Lighting, model::Model};
+use crate::{lighting::Lighting, model::Model, skybox::Skybox};
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
+use image;
+use image::{error::ImageResult, GenericImageView};
 use metal::*;
 
 pub struct Renderer {
+    draw_size_width: u64,
+    draw_size_height: u64,
     pub device: Device,
     command_queue: CommandQueue,
     library: Library,
     uniforms: [Uniforms; 1],
+    skybox_uniforms: [Uniforms; 1],
     fragment_uniforms: [FragmentUniforms; 1],
     camera: ArcballCamera,
     models: Vec<Model>,
+    skybox: Skybox,
     depth_stencil_state: DepthStencilState,
     lighting: Lighting,
 }
 
 impl Renderer {
-    pub fn new() -> Self {
+    pub fn new(draw_size_width: u64, draw_size_height: u64) -> Self {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
@@ -29,9 +36,11 @@ impl Renderer {
             .join("assets/shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let (camera, damaged_helmet) = Self::read_gltf_asset(&device, &library);
+        let skybox = Skybox::new(&library, &device);
 
-        let models = vec![damaged_helmet];
+        let (camera, model) = Self::read_gltf_asset(&device, &library);
+
+        let models = vec![model];
 
         // generate mipmaps
         for model in models.iter() {
@@ -69,6 +78,13 @@ impl Renderer {
             normalMatrix: unsafe { std::mem::transmute(Mat3A::ZERO) },
         };
 
+        let skybox_uniforms = Uniforms {
+            modelMatrix: unsafe { std::mem::transmute(Mat4::IDENTITY) },
+            viewMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
+            projectionMatrix: unsafe { std::mem::transmute(Mat4::ZERO) },
+            normalMatrix: unsafe { std::mem::transmute(Mat3A::ZERO) },
+        };
+
         let depth_stencil_state = Self::build_depth_stencil_state(&device);
 
         let lighting = Lighting::new();
@@ -92,10 +108,14 @@ impl Renderer {
             device,
             command_queue,
             library,
+            draw_size_width,
+            draw_size_height,
             uniforms: [uniforms],
+            skybox_uniforms: [skybox_uniforms],
             fragment_uniforms: [fragment_uniforms],
             camera,
             models,
+            skybox,
             depth_stencil_state,
             lighting,
         }
@@ -128,8 +148,8 @@ impl Renderer {
         color_attachment.set_store_action(MTLStoreAction::Store);
 
         let depth_buffer_descriptor = TextureDescriptor::new();
-        depth_buffer_descriptor.set_width(3000);
-        depth_buffer_descriptor.set_height(3000);
+        depth_buffer_descriptor.set_width(self.draw_size_width);
+        depth_buffer_descriptor.set_height(self.draw_size_height);
         depth_buffer_descriptor.set_pixel_format(MTLPixelFormat::Depth32Float);
         depth_buffer_descriptor.set_storage_mode(MTLStorageMode::Private);
         depth_buffer_descriptor
@@ -137,12 +157,16 @@ impl Renderer {
         let depth_attachment = render_pass_descriptor.depth_attachment().unwrap();
         depth_attachment.set_texture(Some(&self.device.new_texture(&depth_buffer_descriptor)));
         depth_attachment.set_load_action(MTLLoadAction::Clear);
-        depth_attachment.set_store_action(MTLStoreAction::Store);
+        depth_attachment.set_store_action(MTLStoreAction::DontCare);
         depth_attachment.set_clear_depth(1.0);
 
         self.uniforms[0].projectionMatrix =
             unsafe { std::mem::transmute(*self.camera.projection_matrix()) };
         self.uniforms[0].viewMatrix = unsafe { std::mem::transmute(*self.camera.view_matrix()) };
+
+        self.skybox_uniforms[0].viewMatrix = self.uniforms[0].viewMatrix;
+        self.skybox_uniforms[0].projectionMatrix = self.uniforms[0].projectionMatrix;
+
         self.fragment_uniforms[0].cameraPosition = unsafe {
             std::mem::transmute(Vec3A::new(
                 self.camera.position().x,
@@ -153,6 +177,8 @@ impl Renderer {
 
         let command_buffer = self.command_queue.new_command_buffer();
         let render_encoder = command_buffer.new_render_command_encoder(&render_pass_descriptor);
+        // render_encoder.set_front_facing_winding(MTLWinding::CounterClockwise);
+        // render_encoder.set_cull_mode(MTLCullMode::Back);
         render_encoder.set_depth_stencil_state(&self.depth_stencil_state);
 
         render_encoder.set_fragment_bytes(
@@ -171,6 +197,9 @@ impl Renderer {
             render_encoder.pop_debug_group();
         }
 
+        self.skybox
+            .render(&render_encoder, &mut self.skybox_uniforms);
+
         render_encoder.end_encoding();
 
         command_buffer.present_drawable(&drawable);
@@ -185,7 +214,7 @@ impl Renderer {
     }
 
     fn read_gltf_asset(device: &Device, library: &Library) -> (ArcballCamera, Model) {
-        // let damaged_helmet =
+        // let model =
         //     Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
         let model =
             Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);

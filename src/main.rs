@@ -41,7 +41,8 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut renderer = Renderer::new();
+    let draw_size = window.inner_size();
+    let mut renderer = Renderer::new(draw_size.width as u64, draw_size.height as u64);
     let mut program_state = State::new();
 
     let layer = MetalLayer::new();
@@ -55,7 +56,6 @@ fn main() {
         view.setLayer(mem::transmute(layer.as_ref()));
     }
 
-    let draw_size = window.inner_size();
     layer.set_drawable_size(CGSize::new(draw_size.width as f64, draw_size.height as f64));
 
     event_loop.run(move |event, _, control_flow| {

@@ -766,7 +766,10 @@ fn default_vertex_descriptor() -> &'static VertexDescriptorRef {
 
     offset += mem::size_of::<f32>() as u64 * 3;
 
-    let layout_0 = vertex_descriptor.layouts().object_at(0).unwrap();
+    let layout_0 = vertex_descriptor
+        .layouts()
+        .object_at(BufferIndexVertices as u64)
+        .unwrap();
     layout_0.set_stride(offset);
 
     vertex_descriptor
