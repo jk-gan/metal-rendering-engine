@@ -1,89 +1,41 @@
-use crate::model::{Mesh, Model, Submesh};
+use crate::model::{Model, Submesh};
 use crate::shader_bindings::{
     Attributes_Bitangent, Attributes_Normal, Attributes_Position, Attributes_Tangent,
-    Attributes_UV, BufferIndices_BufferIndexSkybox as BufferIndexSkybox,
-    BufferIndices_BufferIndexVertices as BufferIndexVertices, FragmentUniforms, Textures_CubeMap,
-    Uniforms,
+    Attributes_UV, BufferIndices_BufferIndexSkybox as BufferIndexSkybox, Textures_BRDFLut,
+    Textures_CubeMap, Textures_CubeMapDiffuse, Uniforms,
 };
 use glam::{Mat4, Vec4};
 use image;
 use image::{error::ImageResult, GenericImageView};
 use metal::*;
+use std::fs::File;
+use std::io::BufReader;
 use std::mem;
-
-#[rustfmt::skip]
-const VERTICES: [f32; 192] = [
-    // + Y
-    -0.5,  0.5,  0.5, 1.0,  0.0, -1.0,  0.0, 0.0,
-     0.5,  0.5,  0.5, 1.0,  0.0, -1.0,  0.0, 0.0,
-     0.5,  0.5, -0.5, 1.0,  0.0, -1.0,  0.0, 0.0,
-    -0.5,  0.5, -0.5, 1.0,  0.0, -1.0,  0.0, 0.0,
-    // -Y
-    -0.5, -0.5, -0.5, 1.0,  0.0,  1.0,  0.0, 0.0,
-     0.5, -0.5, -0.5, 1.0,  0.0,  1.0,  0.0, 0.0,
-     0.5, -0.5,  0.5, 1.0,  0.0,  1.0,  0.0, 0.0,
-    -0.5, -0.5,  0.5, 1.0,  0.0,  1.0,  0.0, 0.0,
-    // +Z
-    -0.5, -0.5,  0.5, 1.0,  0.0,  0.0, -1.0, 0.0,
-     0.5, -0.5,  0.5, 1.0,  0.0,  0.0, -1.0, 0.0,
-     0.5,  0.5,  0.5, 1.0,  0.0,  0.0, -1.0, 0.0,
-    -0.5,  0.5,  0.5, 1.0,  0.0,  0.0, -1.0, 0.0,
-    // -Z
-     0.5, -0.5, -0.5, 1.0,  0.0,  0.0,  1.0, 0.0,
-    -0.5, -0.5, -0.5, 1.0,  0.0,  0.0,  1.0, 0.0,
-    -0.5,  0.5, -0.5, 1.0,  0.0,  0.0,  1.0, 0.0,
-     0.5,  0.5, -0.5, 1.0,  0.0,  0.0,  1.0, 0.0,
-    // -X
-    -0.5, -0.5, -0.5, 1.0,  1.0,  0.0,  0.0, 0.0,
-    -0.5, -0.5,  0.5, 1.0,  1.0,  0.0,  0.0, 0.0,
-    -0.5,  0.5,  0.5, 1.0,  1.0,  0.0,  0.0, 0.0,
-    -0.5,  0.5, -0.5, 1.0,  1.0,  0.0,  0.0, 0.0,
-    // +X
-     0.5, -0.5,  0.5, 1.0, -1.0,  0.0,  0.0, 0.0,
-     0.5, -0.5, -0.5, 1.0, -1.0,  0.0,  0.0, 0.0,
-     0.5,  0.5, -0.5, 1.0, -1.0,  0.0,  0.0, 0.0,
-     0.5,  0.5,  0.5, 1.0, -1.0,  0.0,  0.0, 0.0,
-];
-
-#[rustfmt::skip]
-const INDICES: [u16; 36] =
-[
-     0,  3,  2,  2,  1,  0,
-     4,  7,  6,  6,  5,  4,
-     8, 11, 10, 10,  9,  8,
-    12, 15, 14, 14, 13, 12,
-    16, 19, 18, 18, 17, 16,
-    20, 23, 22, 22, 21, 20,
-];
+use std::path::Path;
 
 pub struct Skybox {
     vertex_buffer: Buffer,
     index_buffer: Buffer,
     num_elements: u64,
     cube_map: Option<Texture>,
+    irradiance_map: Option<Texture>,
+    brdf_lut: Option<Texture>,
     pipeline_state: RenderPipelineState,
     depth_stencil_state: DepthStencilState,
 }
 
 impl Skybox {
-    pub fn new(library: &Library, device: &Device) -> Self {
+    pub fn new(
+        library: &Library,
+        environment_library: &Library,
+        device: &Device,
+        brdf_lut: Option<Texture>,
+    ) -> Self {
         let model = Model::from_gltf_filename("cube.gltf", 1, device, library);
-        let pipeline_state = Self::build_pipeline_state(library, device);
+        let pipeline_state = Self::build_pipeline_state(environment_library, device);
         let depth_stencil_state = Self::build_depth_stencil_state(device);
         let cube_map = Self::load_cube_map(device).ok();
-
-        // let vertex_buffer = device.new_buffer_with_data(
-        //     VERTICES.as_ptr() as *const _,
-        //     mem::size_of::<f32>() as u64 * VERTICES.len() as u64,
-        //     MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-        // );
-        // let index_buffer = device.new_buffer_with_data(
-        //     INDICES.as_ptr() as *const _,
-        //     mem::size_of::<u16>() as u64 * INDICES.len() as u64,
-        //     MTLResourceOptions::CPUCacheModeDefaultCache | MTLResourceOptions::StorageModeManaged,
-        // );
-
-        // let num_elements = INDICES.len() as u64;
+        let irradiance_map = Self::load_irradiance_map(device).ok();
 
         let Submesh {
             vertex_buffer,
@@ -97,6 +49,8 @@ impl Skybox {
             index_buffer: index_buffer.clone(),
             num_elements: num_elements.clone(),
             cube_map,
+            irradiance_map,
+            brdf_lut,
             pipeline_state,
             depth_stencil_state,
         }
@@ -143,6 +97,21 @@ impl Skybox {
             &self.index_buffer,
             0,
         );
+    }
+
+    pub fn update(&self, render_encoder: &RenderCommandEncoderRef) {
+        if let Some(cube_map) = &self.cube_map {
+            render_encoder.set_fragment_texture(Textures_CubeMap as u64, Some(&cube_map));
+        }
+
+        if let Some(irradiance_map) = &self.irradiance_map {
+            render_encoder
+                .set_fragment_texture(Textures_CubeMapDiffuse as u64, Some(&irradiance_map));
+        }
+
+        if let Some(brdf_lut) = &self.brdf_lut {
+            render_encoder.set_fragment_texture(Textures_BRDFLut as u64, Some(&brdf_lut));
+        }
     }
 
     fn build_pipeline_state(library: &Library, device: &Device) -> RenderPipelineState {
@@ -237,6 +206,7 @@ impl Skybox {
     }
 
     fn load_cube_map(device: &Device) -> ImageResult<Texture> {
+        println!("Load cube map");
         let texture_descriptor = TextureDescriptor::new();
         texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         texture_descriptor.set_texture_type(MTLTextureType::Cube);
@@ -244,6 +214,7 @@ impl Skybox {
         // texture_descriptor.set_height(height as u64);
         texture_descriptor.set_width(2048);
         texture_descriptor.set_height(2048);
+        texture_descriptor.set_mipmap_level_count(9);
         // texture_descriptor.set_mipmap_level_count_for_size(MTLSize {
         //     width: width as u64,
         //     height: height as u64,
@@ -251,19 +222,29 @@ impl Skybox {
         // });
         let texture = device.new_texture(&texture_descriptor);
 
-        let cubemaps = [
-            "right.jpg",
-            "left.jpg",
-            "top.jpg",
-            "bottom.jpg",
-            "front.jpg",
-            "back.jpg",
-        ];
+        // Load HDR equirectangular texture
+        // let hdr_file =
+        //     File::open("assets/environments/venice_sunset/venice_sunset_4k.hdr").unwrap();
+        // let hdr_file = BufReader::new(hdr_file);
+        // let hdr_decoder = image::hdr::HdrDecoder::new(hdr_file).unwrap();
+        // let hdr_metadata = hdr_decoder.metadata();
+
+        // let hdr_pixels = hdr_decoder.read_image_hdr().unwrap();
+
+        // let mut hdr_pixels_raw = Vec::new();
+        // for pixel in hdr_pixels {
+        //     hdr_pixels_raw.push(pixel[0]);
+        //     hdr_pixels_raw.push(pixel[1]);
+        //     hdr_pixels_raw.push(pixel[2]);
+        //     hdr_pixels_raw.push(1.0);
+        // }
+
+        let cubemaps = ["right", "left", "top", "bottom", "front", "back"];
         for (i, map) in cubemaps.iter().enumerate() {
             let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join(format!("resources/skybox/{}", map));
+                .join(format!("assets/environments/sea/{}.jpg", map));
 
-            let img = image::open(path)?;
+            let img = image::open(path).unwrap();
             let (width, height) = img.dimensions();
             println!("dimensions: {}x{}", width, height);
 
@@ -279,19 +260,150 @@ impl Skybox {
 
             match img {
                 image::DynamicImage::ImageRgb8(img) => {
+                    println!("Image RGB 8");
                     for pixel in img.pixels() {
                         new_buf.push(pixel[2]);
                         new_buf.push(pixel[1]);
                         new_buf.push(pixel[0]);
+                        // new_buf.push(pixel[0]);
+                        // new_buf.push(pixel[1]);
+                        // new_buf.push(pixel[2]);
                         new_buf.push(255);
                     }
                 }
                 image::DynamicImage::ImageRgba8(img) => {
+                    println!("Image RGBA 8");
                     for pixel in img.pixels() {
                         new_buf.push(pixel[2]);
                         new_buf.push(pixel[1]);
                         new_buf.push(pixel[0]);
+                        // new_buf.push(pixel[0]);
+                        // new_buf.push(pixel[1]);
+                        // new_buf.push(pixel[2]);
                         new_buf.push(pixel[3]);
+                    }
+                }
+                _ => {
+                    todo!()
+                }
+            }
+
+            texture.replace_region_in_slice(
+                region,
+                0,
+                i as u64,
+                new_buf.as_ptr() as _,
+                bytes_per_row as u64,
+                bytes_per_image as u64,
+            );
+
+            for mipmap_level in 1..=8 {
+                let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(format!(
+                    "assets/environments/sea/specular/{}/specular-{}-{}.png",
+                    mipmap_level, mipmap_level, map
+                ));
+
+                let img = image::open(path)?;
+                let (width, height) = img.dimensions();
+                println!("dimensions: {}x{}", width, height);
+
+                let region = MTLRegion::new_2d(0, 0, width as u64, height as u64);
+
+                let image_scale = 1;
+                let cube_size = width * image_scale;
+                let bytes_per_pixel = 4;
+                let bytes_per_row = bytes_per_pixel * cube_size;
+                let bytes_per_image = bytes_per_row * cube_size;
+
+                let mut new_buf: Vec<u8> = vec![];
+
+                match img {
+                    image::DynamicImage::ImageRgb8(img) => {
+                        for pixel in img.pixels() {
+                            new_buf.push(pixel[2]);
+                            new_buf.push(pixel[1]);
+                            new_buf.push(pixel[0]);
+                            new_buf.push(255);
+                        }
+                    }
+                    image::DynamicImage::ImageRgba8(img) => {
+                        for pixel in img.pixels() {
+                            new_buf.push(pixel[2]);
+                            new_buf.push(pixel[1]);
+                            new_buf.push(pixel[0]);
+                            new_buf.push(pixel[3]);
+                        }
+                    }
+                    _ => {
+                        todo!()
+                    }
+                }
+
+                texture.replace_region_in_slice(
+                    region,
+                    mipmap_level as u64,
+                    i as u64,
+                    new_buf.as_ptr() as _,
+                    bytes_per_row as u64,
+                    bytes_per_image as u64,
+                );
+            }
+        }
+        Ok(texture)
+    }
+
+    fn load_irradiance_map(device: &Device) -> ImageResult<Texture> {
+        let each_size = 128;
+        let texture_descriptor = TextureDescriptor::new();
+        texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        texture_descriptor.set_texture_type(MTLTextureType::Cube);
+        texture_descriptor.set_width(each_size);
+        texture_descriptor.set_height(each_size);
+
+        let texture = device.new_texture(&texture_descriptor);
+
+        let map = "irradiance-6.png";
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("assets/environments/venice_sunset/{}", map));
+
+        let img = image::open(path)?;
+        let (width, height) = img.dimensions();
+        println!("dimensions: {}x{}", width, height);
+
+        for i in 0..6 {
+            let start = i * each_size;
+            let end = (i * each_size) + (each_size - 1);
+            let region = MTLRegion::new_2d(0, 0, each_size, each_size);
+
+            let image_scale = 1;
+            let cube_size = each_size * image_scale;
+            let bytes_per_pixel = 4;
+            let bytes_per_row = bytes_per_pixel * cube_size;
+            let bytes_per_image = bytes_per_row * cube_size;
+
+            let mut new_buf: Vec<u8> = vec![];
+
+            match img {
+                image::DynamicImage::ImageRgb8(ref img) => {
+                    for i in start..=end {
+                        let row = img.rows().nth(i as usize).unwrap();
+                        for pixel in row {
+                            new_buf.push(pixel[2]);
+                            new_buf.push(pixel[1]);
+                            new_buf.push(pixel[0]);
+                            new_buf.push(255);
+                        }
+                    }
+                }
+                image::DynamicImage::ImageRgba8(ref img) => {
+                    for i in start..=end {
+                        let row = img.rows().nth(i as usize).unwrap();
+                        for pixel in row {
+                            new_buf.push(pixel[2]);
+                            new_buf.push(pixel[1]);
+                            new_buf.push(pixel[0]);
+                            new_buf.push(pixel[3]);
+                        }
                     }
                 }
                 _ => {
@@ -310,4 +422,70 @@ impl Skybox {
         }
         Ok(texture)
     }
+
+    // fn load_hdr_map(device: &Device) -> ImageResult<Texture> {
+    //     let texture_descriptor = TextureDescriptor::new();
+    //     texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+    //     texture_descriptor.set_texture_type(MTLTextureType::Cube);
+    //     // texture_descriptor.set_width(width as u64);
+    //     // texture_descriptor.set_height(height as u64);
+    //     texture_descriptor.set_width(2048);
+    //     texture_descriptor.set_height(2048);
+    //     // texture_descriptor.set_mipmap_level_count_for_size(MTLSize {
+    //     //     width: width as u64,
+    //     //     height: height as u64,
+    //     //     depth: 1,
+    //     // });
+    //     let texture = device.new_texture(&texture_descriptor);
+
+    //     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    //         .join(format!("assets/environments/{}", "venice_sunset_4k.hdr"));
+
+    //     let img = image::open(path)?;
+
+    //     let (width, height) = img.dimensions();
+    //     println!("dimensions: {}x{}", width, height);
+
+    //     let region = MTLRegion::new_2d(0, 0, width as u64, height as u64);
+
+    //     let image_scale = 1;
+    //     let cube_size = width * image_scale;
+    //     let bytes_per_pixel = 4;
+    //     let bytes_per_row = bytes_per_pixel * cube_size;
+    //     let bytes_per_image = bytes_per_row * cube_size;
+
+    //     let mut new_buf: Vec<u8> = vec![];
+
+    //     match img {
+    //         image::DynamicImage::ImageRgb8(img) => {
+    //             for pixel in img.pixels() {
+    //                 new_buf.push(pixel[2]);
+    //                 new_buf.push(pixel[1]);
+    //                 new_buf.push(pixel[0]);
+    //                 new_buf.push(255);
+    //             }
+    //         }
+    //         image::DynamicImage::ImageRgba8(img) => {
+    //             for pixel in img.pixels() {
+    //                 new_buf.push(pixel[2]);
+    //                 new_buf.push(pixel[1]);
+    //                 new_buf.push(pixel[0]);
+    //                 new_buf.push(pixel[3]);
+    //             }
+    //         }
+    //         _ => {
+    //             todo!()
+    //         }
+    //     }
+
+    //     texture.replace_region_in_slice(
+    //         region,
+    //         0,
+    //         i as u64,
+    //         new_buf.as_ptr() as _,
+    //         bytes_per_row as u64,
+    //         bytes_per_image as u64,
+    //     );
+    //     Ok(texture)
+    // }
 }

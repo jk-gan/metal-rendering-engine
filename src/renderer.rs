@@ -20,7 +20,7 @@ pub struct Renderer {
     fragment_uniforms: [FragmentUniforms; 1],
     camera: ArcballCamera,
     models: Vec<Model>,
-    skybox: Skybox,
+    skybox: Option<Skybox>,
     depth_stencil_state: DepthStencilState,
     lighting: Lighting,
 }
@@ -36,7 +36,18 @@ impl Renderer {
             .join("assets/shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let skybox = Skybox::new(&library, &device);
+        let environment_library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/shaders/environment_map.metallib");
+        let environment_library = device
+            .new_library_with_file(environment_library_path)
+            .unwrap();
+
+        let brdf_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/shaders/brdf.metallib");
+        let brdf_library = device.new_library_with_file(brdf_path).unwrap();
+        let brdf_lut = Self::build_brdf(&device, &brdf_library, &command_queue);
+
+        let skybox = Skybox::new(&library, &environment_library, &device, brdf_lut);
 
         let (camera, model) = Self::read_gltf_asset(&device, &library);
 
@@ -115,7 +126,7 @@ impl Renderer {
             fragment_uniforms: [fragment_uniforms],
             camera,
             models,
-            skybox,
+            skybox: Some(skybox),
             depth_stencil_state,
             lighting,
         }
@@ -187,6 +198,10 @@ impl Renderer {
             self.lighting.lights.as_ptr() as *const _,
         );
 
+        if let Some(skybox) = &self.skybox {
+            skybox.update(&render_encoder);
+        }
+
         for model in self.models.iter() {
             render_encoder.push_debug_group(&model.name());
             model.render(
@@ -197,8 +212,9 @@ impl Renderer {
             render_encoder.pop_debug_group();
         }
 
-        self.skybox
-            .render(&render_encoder, &mut self.skybox_uniforms);
+        if let Some(skybox) = &self.skybox {
+            skybox.render(&render_encoder, &mut self.skybox_uniforms);
+        }
 
         render_encoder.end_encoding();
 
@@ -214,15 +230,58 @@ impl Renderer {
     }
 
     fn read_gltf_asset(device: &Device, library: &Library) -> (ArcballCamera, Model) {
+        let mut model =
+            Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
+        model.set_rotation(Vec3::new(
+            270.0_f32.to_radians(),
+            180.0_f32.to_radians(),
+            220.0_f32.to_radians(),
+        ));
         // let model =
-        //     Model::from_gltf_filename("DamagedHelmet/DamagedHelmet.gltf", 1, &device, &library);
-        let model =
-            Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);
+        //     Model::from_gltf_filename("FlightHelmet/FlightHelmet.gltf", 1, &device, &library);
 
-        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.3, 0.0), 1.0);
+        let mut camera = ArcballCamera::new(0.5, 10.0, Vec3::new(0.0, 0.3, 0.0), 3.5);
         camera.set_position(Vec3::new(0.0, 0.0, 2.5));
         camera.set_rotation(Vec3::new(0.0, 160.0_f32.to_radians(), 0.0));
 
         (camera, model)
+    }
+
+    fn build_brdf(
+        device: &Device,
+        library: &Library,
+        command_queue: &CommandQueue,
+    ) -> Option<Texture> {
+        let size = 256;
+
+        let brdf_function = library.get_function("integrateBRDF", None).unwrap();
+        let brdf_pipeline_state =
+            match device.new_compute_pipeline_state_with_function(&brdf_function) {
+                Ok(pipeline_state) => pipeline_state,
+                _ => return None,
+            };
+        let command_buffer = command_queue.new_command_buffer();
+        let command_encoder = command_buffer.new_compute_command_encoder();
+
+        let descriptor = TextureDescriptor::new();
+        descriptor.set_width(size);
+        descriptor.set_height(size);
+        descriptor.set_pixel_format(MTLPixelFormat::RG16Float);
+        // descriptor.set_mipmap_level_count(0);
+        descriptor.set_usage(MTLTextureUsage::ShaderWrite | MTLTextureUsage::ShaderRead);
+        let lut = device.new_texture(&descriptor);
+        command_encoder.set_compute_pipeline_state(&brdf_pipeline_state);
+        command_encoder.set_texture(0, Some(&lut));
+        let threads_per_threadgroup = MTLSize::new(16, 16, 1);
+        let threadgroups = MTLSize::new(
+            size / threads_per_threadgroup.width,
+            size / threads_per_threadgroup.height,
+            1,
+        );
+        command_encoder.dispatch_thread_groups(threadgroups, threads_per_threadgroup);
+        command_encoder.end_encoding();
+        command_buffer.commit();
+
+        Some(lut)
     }
 }

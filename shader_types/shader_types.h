@@ -59,7 +59,9 @@ typedef enum {
   MetallicRoughnessTexture = 2,
   OcclusionTexture = 3,
   EmissiveTexture = 4,
-  CubeMap = 5
+  CubeMap = 5,
+  CubeMapDiffuse = 6,
+  BRDFLut = 7
 } Textures;
 
 typedef struct {

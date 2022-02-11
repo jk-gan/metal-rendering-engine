@@ -12,8 +12,8 @@ use glam::{f32::Quat, Mat3A, Mat4, Vec2, Vec3, Vec4};
 use metal::*;
 use std::mem;
 
-// const TEXTURE_PATH: &str = "DamagedHelmet";
-const TEXTURE_PATH: &str = "FlightHelmet";
+const TEXTURE_PATH: &str = "DamagedHelmet";
+// const TEXTURE_PATH: &str = "FlightHelmet";
 
 #[derive(Debug, Copy, Clone)]
 pub struct ModelVertex {
@@ -213,6 +213,9 @@ impl Submesh {
         let fragment_function = library
             .get_function("fragment_main", Some(fragment_constants))
             .expect("No Metal function exists");
+        // let fragment_function = library
+        //     .get_function("skybox_test", Some(fragment_constants))
+        //     .expect("No Metal function exists");
         let vertex_function = library.get_function("vertex_main", None).unwrap();
         let vertex_descriptor = default_vertex_descriptor();
 

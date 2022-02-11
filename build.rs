@@ -36,6 +36,48 @@ stderr: {}
         );
     }
 
+    let output = Command::new("xcrun")
+        .arg("-sdk")
+        .arg("macosx")
+        .arg("metal")
+        .args(&["-c", "./assets/shaders/environment_map.metal"])
+        .args(&["-o", "./assets/shaders/environment_map.air"])
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+    if !output.status.success() {
+        panic!(
+            r#"
+stdout: {}
+stderr: {}
+"#,
+            String::from_utf8(output.stdout).unwrap(),
+            String::from_utf8(output.stderr).unwrap()
+        );
+    }
+
+    let output = Command::new("xcrun")
+        .arg("-sdk")
+        .arg("macosx")
+        .arg("metal")
+        .args(&["-c", "./assets/shaders/brdf.metal"])
+        .args(&["-o", "./assets/shaders/brdf.air"])
+        .spawn()
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+    if !output.status.success() {
+        panic!(
+            r#"
+stdout: {}
+stderr: {}
+"#,
+            String::from_utf8(output.stdout).unwrap(),
+            String::from_utf8(output.stderr).unwrap()
+        );
+    }
+
     Command::new("xcrun")
         .arg("-sdk")
         .arg("macosx")
@@ -44,6 +86,32 @@ stderr: {}
         // .args(&["-o", "./shaders/shaders.metallib"])
         .arg("./assets/shaders/pbr.air")
         .args(&["-o", "./assets/shaders/pbr.metallib"])
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    Command::new("xcrun")
+        .arg("-sdk")
+        .arg("macosx")
+        .arg("metallib")
+        // .arg("./shaders/shaders.air")
+        // .args(&["-o", "./shaders/shaders.metallib"])
+        .arg("./assets/shaders/environment_map.air")
+        .args(&["-o", "./assets/shaders/environment_map.metallib"])
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    Command::new("xcrun")
+        .arg("-sdk")
+        .arg("macosx")
+        .arg("metallib")
+        // .arg("./shaders/shaders.air")
+        // .args(&["-o", "./shaders/shaders.metallib"])
+        .arg("./assets/shaders/brdf.air")
+        .args(&["-o", "./assets/shaders/brdf.metallib"])
         .spawn()
         .unwrap()
         .wait()

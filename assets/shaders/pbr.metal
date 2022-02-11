@@ -61,6 +61,9 @@ typedef struct Lighting {
   float3 viewDirection;
   float3 baseColor;
   float3 normal;
+  float3 reflectedVector;
+  float3 reflectedColor;
+  float3 irradiatedColor;
   float metallic;
   float roughness;
   float ambientOcclusion;
@@ -81,6 +84,22 @@ vertex VertexOut vertex_main(VertexIn vertexIn [[stage_in]], constant Uniforms &
   return out;
 }
 
+fragment float4 skybox_test(VertexOut in [[stage_in]],
+          constant Light *lights [[buffer(BufferIndexLights)]],
+          constant Material &material [[buffer(BufferIndexMaterials)]],
+          sampler textureSampler [[sampler(0)]],
+          constant FragmentUniforms &fragmentUniforms [[buffer(BufferIndexFragmentUniforms)]],
+          texturecube<float> skybox [[texture(CubeMap)]]) {
+  float3 viewDirection = in.worldPosition.xyz - fragmentUniforms.cameraPosition;
+  float3 textureCoordinates = reflect(viewDirection, in.worldNormal);
+
+  constexpr sampler defaultSampler(filter::linear);
+  float4 color = skybox.sample(defaultSampler, textureCoordinates);
+  float4 copper = float4(0.86, 0.7, 0.48, 1);
+  color = color * copper;
+  return color;
+}
+
 fragment float4 fragment_main(VertexOut in [[stage_in]],
           constant Light *lights [[buffer(BufferIndexLights)]],
           constant Material &material [[buffer(BufferIndexMaterials)]],
@@ -90,12 +109,15 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
           texture2d<float> normalTexture [[texture(NormalTexture), function_constant(hasNormalTexture)]],
           texture2d<float> metallicRoughnessTexture [[texture(MetallicRoughnessTexture), function_constant(hasMetallicRoughnessTexture)]],
           texture2d<float> aoTexture [[texture(OcclusionTexture), function_constant(hasAOTexture)]],
-          texture2d<float> emissiveTexture [[texture(EmissiveTexture), function_constant(hasEmissiveTexture)]]) {
+          texture2d<float> emissiveTexture [[texture(EmissiveTexture), function_constant(hasEmissiveTexture)]],
+          texturecube<float> skybox [[texture(CubeMap)]],
+          texturecube<float> skyboxDiffuse [[texture(CubeMapDiffuse)]],
+          texture2d<float> brdfLut [[texture(BRDFLut)]]) {
   // extract color
   float3 baseColor;
   if (hasColorTexture) {
-    baseColor = baseColorTexture.sample(textureSampler,
-                                        in.uv * fragmentUniforms.tiling).rgb;
+    baseColor = pow(baseColorTexture.sample(textureSampler,
+                                        in.uv * fragmentUniforms.tiling).rgb, 2.2);
   } else {
     baseColor = material.baseColor.rgb;
   }
@@ -103,8 +125,10 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
   float metallic;
   float roughness;
   if (hasMetallicRoughnessTexture) {
-    metallic = metallicRoughnessTexture.sample(textureSampler, in.uv).r * material.metallic;
-    roughness = metallicRoughnessTexture.sample(textureSampler, in.uv).g * material.roughness;
+    metallic = metallicRoughnessTexture.sample(textureSampler, in.uv).r;
+    roughness = metallicRoughnessTexture.sample(textureSampler, in.uv).g;
+    /* metallic = metallicRoughnessTexture.sample(textureSampler, in.uv).r * material.metallic; */
+    /* roughness = metallicRoughnessTexture.sample(textureSampler, in.uv).g * material.roughness; */
   } else {
     metallic = material.metallic;
     roughness = material.roughness;
@@ -119,7 +143,8 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
 
   float3 emissiveColor;
   if (hasEmissiveTexture) {
-    emissiveColor = emissiveTexture.sample(textureSampler, in.uv).rgb * float3(1, 1, 1);
+    /* emissiveColor = emissiveTexture.sample(textureSampler, in.uv).rgb * float3(1, 1, 1); */
+    emissiveColor = emissiveTexture.sample(textureSampler, in.uv).rgb;
   } else {
     emissiveColor = float3(0, 0, 0);
   }
@@ -135,8 +160,32 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
     normal = in.worldNormal;
   }
   normal = normalize(normal);
-  
+
+  float4 diffuse = skyboxDiffuse.sample(textureSampler, normal);
+  diffuse = mix(pow(diffuse, 0.5), diffuse, metallic);
+
+  /* float3 viewDirection = in.worldPosition.xyz - fragmentUniforms.cameraPosition; */
   float3 viewDirection = normalize(fragmentUniforms.cameraPosition - in.worldPosition);
+  float3 textureCoordinates = reflect(-viewDirection, normal);
+
+  constexpr sampler s(filter::linear, mip_filter::linear);
+  float3 prefilteredColor = skybox.sample(s, textureCoordinates,
+                                          level(roughness * 10)).rgb;
+
+  float nDotV = saturate(dot(normal, normalize(-viewDirection)));
+  float2 envBRDF = brdfLut.sample(s, float2(roughness, nDotV)).rg;
+
+  float3 f0 = mix(0.04, baseColor.rgb, metallic);
+  float3 specularIBL = f0 * envBRDF.r + envBRDF.g;
+  
+  float3 specular = prefilteredColor * specularIBL;
+  float4 color = diffuse * float4(baseColor, 1) + float4(specular, 1);
+  color *= ambientOcclusion;
+  color += float4(emissiveColor, 1.0);
+
+  return color;
+  
+  // float3 viewDirection = normalize(fragmentUniforms.cameraPosition - in.worldPosition);
   
   Light light = lights[0];
   float3 lightDirection = normalize(light.position);
@@ -152,17 +201,56 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
   lighting.roughness = roughness;
   lighting.ambientOcclusion = ambientOcclusion;
   lighting.lightColor = light.color;
+  lighting.irradiatedColor = prefilteredColor;
   
   float3 specularOutput = render(lighting);
   
   // compute Lambertian diffuse
   float nDotl = max(0.001, saturate(dot(lighting.normal, lighting.lightDirection)));
-  float3 diffuseColor = light.color * baseColor * nDotl * ambientOcclusion;
-  diffuseColor *= 1.0 - metallic;
+  float3 diffuseColor = float3(((1.0/pi) * baseColor) * (1.0 - metallic));
+  diffuseColor = diffuseColor * nDotl * ambientOcclusion;
+  /* float3 diffuseColor = diffuse * baseColor * nDotl * ambientOcclusion; */
+  /* diffuseColor *= 1.0 - metallic; */
   
-  float4 finalColor = float4(specularOutput + diffuseColor + emissiveColor, 1.0);
+  float4 finalColor = float4(specularOutput, 1.0) + (diffuse * float4(diffuseColor, 1.0)) + float4(emissiveColor, 1.0);
   return finalColor;
 }
+
+/* // GGX distribution */
+/* float D_GGX(float NoH, float roughness) { */
+/*   float a = NoH * roughness; */
+/*   float k = roughness / (1.0 - NoH * NoH + a * a); */
+/*   return k * k * (1.0 / PI); */
+/* } */
+
+/* float optimized_D_GGX(float roughness, float NoH, const float3 n, const float3 h) { */
+/*   float MEDIUMP_FLT_MAX = 65504.0; */
+
+/*   float3 NxH = cross(n, h); */
+/*   float a = NoH * roughness; */
+/*   float k = roughness / (dot(NxH, Nxh) + a * a); */
+/*   float d = k * k * (1.0 / PI); */
+
+/*   return min(d, MEDIUMP_FLT_MAX); */
+/* } */
+
+/* // Geometric shadowing */
+/* float V_SmithGGXCorrelatedFast(float NoV, float NoL, float roughness) { */
+/*   float a = roughness; */
+/*   float GGXV = NoL * (NoV * (1.0 - a) + a); */
+/*   float GGXL = NoV * (NoL * (1.0 - a) + a); */
+/*   return 0.5 / (GGXV + GGXL); */
+/* } */
+
+/* // Fresnel */
+/* float3 F_Schlick(float u, float3 f0, float f90) { */
+/*   return f0 + (float3(f90) - f0) * pow(1.0 - u, 5.0); */
+/* } */
+
+/* float3 optimized_F_Schlick(float u, float3 f0) { */
+/*   float f = pow(1.0 - u, 5.0); */
+/*   return f + f0 * (1.0 - f); */
+/* } */
 
 /*
 PBR.metal rendering equation from Apple's LODwithFunctionSpecialization sample code is under Copyright © 2017 Apple Inc.
@@ -190,8 +278,11 @@ float3 render(Lighting lighting) {
   float Ds;
   if (specularRoughness >= 1.0) {
     Ds = 1.0 / pi;
-  }
-  else {
+  } else {
+    /* float a = nDoth * specularRoughness; */
+    /* float k = specularRoughness / (1.0 - nDoth * nDoth + a * a); */
+    /* Ds = k * k * (1.0 / pi); */
+
     float roughnessSqr = specularRoughness * specularRoughness;
     float d = (nDoth * roughnessSqr - nDoth) * nDoth + 1;
     Ds = roughnessSqr / (pi * d * d);
@@ -211,7 +302,7 @@ float3 render(Lighting lighting) {
   float G2 = (float)(1.0 / (b2 + sqrt(a + b2 - a*b2)));
   float Gs = G1 * G2;
   
-  float3 specularOutput = (Ds * Gs * Fs * lighting.lightColor) * (1.0 + lighting.metallic * lighting.baseColor) + lighting.metallic * lighting.lightColor * lighting.baseColor;
+  float3 specularOutput = (Ds * Gs * Fs * lighting.irradiatedColor) * (1.0 + lighting.metallic * lighting.baseColor) + lighting.metallic * lighting.irradiatedColor * lighting.baseColor;
   specularOutput = specularOutput * lighting.ambientOcclusion;
   
   return specularOutput;
