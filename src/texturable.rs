@@ -14,6 +14,7 @@ pub trait Texturable {
         println!("dimensions: {}x{}", width, height);
 
         let texture_descriptor = TextureDescriptor::new();
+        texture_descriptor.set_storage_mode(MTLStorageMode::Shared);
         texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         texture_descriptor.set_width(width as u64);
         texture_descriptor.set_height(height as u64);

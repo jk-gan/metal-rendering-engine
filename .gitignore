@@ -4,6 +4,7 @@
 
 *.air
 *.metallib
+*.metallibsym
 shader_types_hash
 
 tmux-*

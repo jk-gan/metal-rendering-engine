@@ -30,24 +30,13 @@ impl Renderer {
         let device = Device::system_default().expect("GPU not available!");
         let command_queue = device.new_command_queue();
 
-        // let library_path =
-        //     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("shaders/shaders.metallib");
         let library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("assets/shaders/pbr.metallib");
         let library = device.new_library_with_file(library_path).unwrap();
 
-        let environment_library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/shaders/environment_map.metallib");
-        let environment_library = device
-            .new_library_with_file(environment_library_path)
-            .unwrap();
+        let brdf_lut = Self::build_brdf(&device, &library, &command_queue);
 
-        let brdf_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/shaders/brdf.metallib");
-        let brdf_library = device.new_library_with_file(brdf_path).unwrap();
-        let brdf_lut = Self::build_brdf(&device, &brdf_library, &command_queue);
-
-        let skybox = Skybox::new(&library, &environment_library, &device, brdf_lut);
+        let skybox = Skybox::new(&library, &device, brdf_lut);
 
         let (camera, model) = Self::read_gltf_asset(&device, &library);
 

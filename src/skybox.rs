@@ -27,12 +27,12 @@ pub struct Skybox {
 impl Skybox {
     pub fn new(
         library: &Library,
-        environment_library: &Library,
+        // environment_library: &Library,
         device: &Device,
         brdf_lut: Option<Texture>,
     ) -> Self {
         let model = Model::from_gltf_filename("cube.gltf", 1, device, library);
-        let pipeline_state = Self::build_pipeline_state(environment_library, device);
+        let pipeline_state = Self::build_pipeline_state(library, device);
         let depth_stencil_state = Self::build_depth_stencil_state(device);
         let cube_map = Self::load_cube_map(device).ok();
         let irradiance_map = Self::load_irradiance_map(device).ok();
@@ -208,6 +208,7 @@ impl Skybox {
     fn load_cube_map(device: &Device) -> ImageResult<Texture> {
         println!("Load cube map");
         let texture_descriptor = TextureDescriptor::new();
+        texture_descriptor.set_storage_mode(MTLStorageMode::Shared);
         texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         texture_descriptor.set_texture_type(MTLTextureType::Cube);
         // texture_descriptor.set_width(width as u64);
@@ -355,6 +356,7 @@ impl Skybox {
     fn load_irradiance_map(device: &Device) -> ImageResult<Texture> {
         let each_size = 128;
         let texture_descriptor = TextureDescriptor::new();
+        texture_descriptor.set_storage_mode(MTLStorageMode::Shared);
         texture_descriptor.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
         texture_descriptor.set_texture_type(MTLTextureType::Cube);
         texture_descriptor.set_width(each_size);
