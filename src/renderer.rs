@@ -1,17 +1,19 @@
 use crate::camera::{ArcballCamera, CameraFunction};
 use crate::shader_bindings::{
-    BufferIndices_BufferIndexLights as BufferIndexLights, FragmentUniforms, Light,
-    Textures_CubeMap, Uniforms,
+    BufferIndices_BufferIndexLights as BufferIndexLights, FragmentUniforms, Light, Uniforms,
 };
 use crate::{lighting::Lighting, model::Model, skybox::Skybox};
+use cocoa::{appkit::NSView, base::id as cocoa_id};
+use core_graphics_types::geometry::CGSize;
 use glam::{Mat3A, Mat4, Vec3, Vec3A};
-use image;
-use image::{error::ImageResult, GenericImageView};
 use metal::*;
+use objc::runtime::YES;
+use winit::{platform::macos::WindowExtMacOS, window::Window};
 
 pub struct Renderer {
     draw_size_width: u64,
     draw_size_height: u64,
+    layer: MetalLayer,
     pub device: Device,
     command_queue: CommandQueue,
     library: Library,
@@ -25,9 +27,47 @@ pub struct Renderer {
     lighting: Lighting,
 }
 
+fn get_high_performance_device() -> Option<Device> {
+    let devices_list = Device::all();
+    for device in devices_list {
+        if !device.is_low_power() && !device.is_removable() && !device.is_headless() {
+            return Some(device);
+        }
+    }
+
+    None
+}
+
 impl Renderer {
-    pub fn new(draw_size_width: u64, draw_size_height: u64) -> Self {
-        let device = Device::system_default().expect("GPU not available!");
+    pub fn new(window: &Window) -> Self {
+        #[cfg(not(target_os = "macos"))]
+        panic!("The viewer only support macOS at the moment.");
+
+        let device = get_high_performance_device().expect("Discrete GPU not available!");
+        println!("support raytracing? {}", device.supports_raytracing());
+        println!(
+            "support Apple family 6? {}",
+            device.supports_family(MTLGPUFamily::Apple6)
+        );
+        println!(
+            "support Apple Mac 7? {}",
+            device.supports_family(MTLGPUFamily::Mac2)
+        );
+
+        let layer = MetalLayer::new();
+        layer.set_device(&device);
+        layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
+        layer.set_presents_with_transaction(false);
+
+        unsafe {
+            let view = window.ns_view() as cocoa_id;
+            view.setWantsLayer(YES);
+            view.setLayer(std::mem::transmute(layer.as_ref()));
+        }
+
+        let draw_size = window.inner_size();
+        layer.set_drawable_size(CGSize::new(draw_size.width as f64, draw_size.height as f64));
+
         let command_queue = device.new_command_queue();
 
         let library_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -107,9 +147,10 @@ impl Renderer {
         Self {
             device,
             command_queue,
+            layer,
             library,
-            draw_size_width,
-            draw_size_height,
+            draw_size_width: draw_size.width as u64,
+            draw_size_height: draw_size.height as u64,
             uniforms: [uniforms],
             skybox_uniforms: [skybox_uniforms],
             fragment_uniforms: [fragment_uniforms],
@@ -122,6 +163,9 @@ impl Renderer {
     }
 
     pub fn resize(&mut self, width: u32, height: u32) {
+        self.layer
+            .set_drawable_size(CGSize::new(width as f64, height as f64));
+
         let aspect_ratio = width as f32 / height as f32;
         self.camera.set_aspect_ratio(aspect_ratio);
     }
@@ -134,7 +178,12 @@ impl Renderer {
         self.camera.rotate((delta.0 as f32, delta.1 as f32));
     }
 
-    pub fn draw(&mut self, drawable: &MetalDrawableRef) {
+    pub fn draw(&mut self) {
+        let drawable = match self.layer.next_drawable() {
+            Some(drawable) => drawable,
+            None => return,
+        };
+
         let render_pass_descriptor = RenderPassDescriptor::new();
 
         let color_attachment = render_pass_descriptor

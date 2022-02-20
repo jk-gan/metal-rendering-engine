@@ -1,10 +1,5 @@
-use cocoa::{appkit::NSView, base::id as cocoa_id};
-use core_graphics_types::geometry::CGSize;
-use metal::*;
 use metal_gltf_viewer::Renderer;
-use objc::{rc::autoreleasepool, runtime::YES};
-use std::mem;
-use winit::platform::macos::WindowExtMacOS;
+use objc::rc::autoreleasepool;
 use winit::{
     dpi::LogicalSize,
     event::{
@@ -41,25 +36,10 @@ fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let draw_size = window.inner_size();
-    let mut renderer = Renderer::new(draw_size.width as u64, draw_size.height as u64);
+    let mut renderer = Renderer::new(&window);
     let mut program_state = State::new();
 
-    let layer = MetalLayer::new();
-    layer.set_device(&renderer.device);
-    layer.set_pixel_format(MTLPixelFormat::BGRA8Unorm);
-    layer.set_presents_with_transaction(false);
-
-    unsafe {
-        let view = window.ns_view() as cocoa_id;
-        view.setWantsLayer(YES);
-        view.setLayer(mem::transmute(layer.as_ref()));
-    }
-
-    layer.set_drawable_size(CGSize::new(draw_size.width as f64, draw_size.height as f64));
-
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Poll;
         autoreleasepool(|| {
             *control_flow = ControlFlow::Poll;
 
@@ -80,14 +60,9 @@ fn main() {
                         ..
                     } => *control_flow = ControlFlow::Exit,
                     WindowEvent::Resized(size) => {
-                        layer.set_drawable_size(CGSize::new(size.width as f64, size.height as f64));
                         renderer.resize(size.width, size.height);
                     }
                     WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                        layer.set_drawable_size(CGSize::new(
-                            new_inner_size.width as f64,
-                            new_inner_size.height as f64,
-                        ));
                         renderer.resize(new_inner_size.width, new_inner_size.height);
                     }
                     WindowEvent::MouseInput {
@@ -120,12 +95,7 @@ fn main() {
                     _ => {}
                 },
                 Event::RedrawRequested(_) => {
-                    let drawable = match layer.next_drawable() {
-                        Some(drawable) => drawable,
-                        None => return,
-                    };
-
-                    renderer.draw(drawable);
+                    renderer.draw();
                 }
                 _ => {}
             }
