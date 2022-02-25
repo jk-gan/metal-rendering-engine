@@ -41,6 +41,7 @@ typedef enum {
   BufferIndexLights = 1,
   BufferIndexUniforms = 2,
   BufferIndexFragmentUniforms = 3,
+  BufferIndexSkybox = 13,
   BufferIndexMaterials = 14
 } BufferIndices;
 
@@ -57,7 +58,10 @@ typedef enum {
   NormalTexture = 1,
   MetallicRoughnessTexture = 2,
   OcclusionTexture = 3,
-  EmissiveTexture = 4
+  EmissiveTexture = 4,
+  CubeMap = 5,
+  CubeMapDiffuse = 6,
+  BRDFLut = 7
 } Textures;
 
 typedef struct {

@@ -4,6 +4,8 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::process::Command;
 
+const SHADER_OUTPUT_NAME: &str = "pbr";
+
 fn main() {
     generate_rust_types_from_shader_types();
     compile_shaders();
@@ -11,41 +13,65 @@ fn main() {
 
 // xcrun -sdk macosx metal -c shaders.metal -o shaders.air
 // xcrun -sdk macosx metallib shaders.air -o shaders.metallib
+
 fn compile_shaders() {
+    let shader_files = ["pbr", "environment_map", "brdf"];
+    let shader_air_files: Vec<_> = shader_files
+        .iter()
+        .map(|each| format!("./assets/shaders/{each}.air"))
+        .collect();
     println!("cargo:rerun-if-changed=shaders.metal");
     println!("cargo:rerun-if-changed=shader_types.h");
 
-    let output = Command::new("xcrun")
-        .arg("-sdk")
-        .arg("macosx")
-        .arg("metal")
-        // .args(&["-c", "./shaders/shaders.metal"])
-        // .args(&["-o", "./shaders/shaders.air"])
-        .args(&["-c", "./shaders/pbr.metal"])
-        .args(&["-o", "./shaders/pbr.air"])
-        .spawn()
-        .unwrap()
-        .wait_with_output()
-        .unwrap();
-    if !output.status.success() {
-        panic!(
-            r#"
+    shader_files.iter().for_each(|each| {
+        let output = Command::new("xcrun")
+            .arg("-sdk")
+            .arg("macosx")
+            .arg("metal")
+            .arg("-frecord-sources")
+            .args(&["-c", format!("./assets/shaders/{each}.metal").as_str()])
+            .args(&["-o", format!("./assets/shaders/{each}.air").as_str()])
+            .spawn()
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
+
+        if !output.status.success() {
+            panic!(
+                r#"
 stdout: {}
 stderr: {}
 "#,
-            String::from_utf8(output.stdout).unwrap(),
-            String::from_utf8(output.stderr).unwrap()
-        );
-    }
+                String::from_utf8(output.stdout).unwrap(),
+                String::from_utf8(output.stderr).unwrap()
+            );
+        }
+    });
 
     Command::new("xcrun")
         .arg("-sdk")
         .arg("macosx")
-        .arg("metallib")
-        // .arg("./shaders/shaders.air")
-        // .args(&["-o", "./shaders/shaders.metallib"])
-        .arg("./shaders/pbr.air")
-        .args(&["-o", "./shaders/pbr.metallib"])
+        // .arg("metallib")
+        .arg("metal")
+        .arg("-frecord-sources")
+        .args(&[
+            "-o",
+            format!("./assets/shaders/{SHADER_OUTPUT_NAME}.metallib").as_str(),
+        ])
+        .args(&shader_air_files)
+        .spawn()
+        .unwrap()
+        .wait()
+        .unwrap();
+
+    // https://developer.apple.com/documentation/metal/libraries/generating_and_loading_a_metal_library_symbol_file
+    Command::new("xcrun")
+        .arg("-sdk")
+        .arg("macosx")
+        .arg("metal-dsymutil")
+        .arg("-flat")
+        .arg("-remove-source")
+        .arg(format!("./assets/shaders/{SHADER_OUTPUT_NAME}.metallib").as_str())
         .spawn()
         .unwrap()
         .wait()

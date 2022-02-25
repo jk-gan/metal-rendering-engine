@@ -27,7 +27,7 @@ impl Lighting {
             light.color = unsafe { std::mem::transmute(Vec3A::new(0.4, 0.4, 0.4)) };
             light
         };
-        let lights = vec![sunlight, ambient_light, fill_light];
+        let lights = vec![sunlight, ambient_light];
         let count = lights.len() as u32;
 
         Self { lights, count }
