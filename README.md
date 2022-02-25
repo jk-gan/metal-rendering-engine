@@ -10,8 +10,9 @@
   <img alt="Obsidian serve" src="./.github/img/hello-triangle.png" >
 </div>
 
-### Preview
-https://user-images.githubusercontent.com/7545747/144714759-499948d0-f186-4034-bad1-86d6c5685258.mp4
+<div align="center">
+  <img alt="Obsidian serve" src="./.github/img/damaged-helmet.png" >
+</div>
 
 
 

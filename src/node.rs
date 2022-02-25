@@ -1,13 +1,38 @@
+use crate::{camera::Camera, model::Model};
 use glam::{Mat4, Vec3};
+use std::rc::Rc;
+
+// pub enum NodeType {
+//     Camera(Camera),
+//     Model,
+// }
+
+pub trait SceneNode {
+    fn get_postion(&self) -> &Vec3;
+    fn set_postion(&self);
+    fn get_rotation(&self) -> &Vec3;
+    fn set_rotation(&self);
+    fn get_scale(&self) -> &Vec3;
+    fn set_scale(&self);
+}
+
+struct TestNode {
+    inner_node: InnerNode,
+}
 
 pub struct Node {
+    parent: Rc<Node>,
+    children: Vec<Node>,
+}
+
+pub struct InnerNode {
     pub(crate) name: String,
     pub(crate) position: Vec3,
     pub(crate) rotation: Vec3,
     pub(crate) scale: Vec3,
 }
 
-impl Default for Node {
+impl Default for InnerNode {
     fn default() -> Self {
         Self::new(
             "untitled".to_string(),
@@ -18,7 +43,7 @@ impl Default for Node {
     }
 }
 
-impl Node {
+impl InnerNode {
     pub fn new(name: String, position: Vec3, rotation: Vec3, scale: Vec3) -> Self {
         Self {
             name,
