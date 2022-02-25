@@ -10,17 +10,7 @@ constant bool hasMetallicRoughnessTexture [[function_constant(2)]];
 constant bool hasAOTexture [[function_constant(3)]];
 constant bool hasEmissiveTexture [[function_constant(4)]];
 
-constant float pi = 3.1415926535897932384626433832795;
-
-struct SkyboxVertexIn {
-  float4 position [[attribute(Position)]];
-  // float4 normal [[attribute(Normal)]];
-};
-
-struct SkyboxVertexOut {
-  float4 position [[position]];
-  float3 texCoords;
-};
+constant float PI = 3.1415926535897932384626433832795;
 
 struct VertexIn {
   float4 position [[attribute(Position)]];
@@ -190,7 +180,7 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
   
   // compute Lambertian diffuse
   float nDotl = max(0.001, saturate(dot(lighting.normal, lighting.lightDirection)));
-  float3 diffuseColor = float3(((1.0/pi) * baseColor) * (1.0 - metallic));
+  float3 diffuseColor = float3(((1.0/PI) * baseColor) * (1.0 - metallic));
   diffuseColor = diffuseColor * nDotl * ambientOcclusion;
   /* float3 diffuseColor = diffuse * baseColor * nDotl * ambientOcclusion; */
   /* diffuseColor *= 1.0 - metallic; */
@@ -199,12 +189,15 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
   return finalColor;
 }
 
-/* // GGX distribution */
-/* float D_GGX(float NoH, float roughness) { */
-/*   float a = NoH * roughness; */
-/*   float k = roughness / (1.0 - NoH * NoH + a * a); */
-/*   return k * k * (1.0 / PI); */
-/* } */
+// ---------- Specular BRDF ----------
+
+// Normal distribution function
+// GGX distribution (D)
+float D_GGX(float NoH, float roughness) { 
+  float a = NoH * roughness; 
+  float k = roughness / (1.0 - NoH * NoH + a * a); 
+  return k * k * (1.0 / PI); 
+} 
 
 /* float optimized_D_GGX(float roughness, float NoH, const float3 n, const float3 h) { */
 /*   float MEDIUMP_FLT_MAX = 65504.0; */
@@ -217,23 +210,55 @@ fragment float4 fragment_main(VertexOut in [[stage_in]],
 /*   return min(d, MEDIUMP_FLT_MAX); */
 /* } */
 
-/* // Geometric shadowing */
-/* float V_SmithGGXCorrelatedFast(float NoV, float NoL, float roughness) { */
-/*   float a = roughness; */
-/*   float GGXV = NoL * (NoV * (1.0 - a) + a); */
-/*   float GGXL = NoV * (NoL * (1.0 - a) + a); */
-/*   return 0.5 / (GGXV + GGXL); */
-/* } */
+// Geometric shadowing (G)
+float V_SmithGGXCorrelatedFast(float NoV, float NoL, float roughness) {
+  float a = roughness;
+  float GGXV = NoL * (NoV * (1.0 - a) + a);
+  float GGXL = NoV * (NoL * (1.0 - a) + a);
+  return 0.5 / (GGXV + GGXL);
+} 
 
-/* // Fresnel */
-/* float3 F_Schlick(float u, float3 f0, float f90) { */
-/*   return f0 + (float3(f90) - f0) * pow(1.0 - u, 5.0); */
-/* } */
+// Fresnel (F) 
+float3 F_Schlick(float u, float3 f0, float f90) {
+  return f0 + (float3(f90) - f0) * pow(1.0 - u, 5.0);
+}
 
 /* float3 optimized_F_Schlick(float u, float3 f0) { */
 /*   float f = pow(1.0 - u, 5.0); */
 /*   return f + f0 * (1.0 - f); */
 /* } */
+
+// ---------- Diffuse BRDF ----------
+float Fd_Lambert() {
+  return 1.0 / PI;
+}
+
+// void BRDF(float3 v, float3 l, float3 n, float perceptualRoughness) {
+//   // half vector
+//   float3 h = normalize(v + l);
+
+//   float NoV = abs(dot(n, v)) + 1e-5;
+//   float NoL = saturate(dot(n, l));
+//   float NoH = saturate(dot(n, h));
+//   float LoH = saturate(dot(l, h));
+
+//   // perceptually linear roughness to roughness 
+//   float roughness = perceptualRoughness * perceptualRoughness;
+
+//   float D = D_GGX(NoH, roughness);
+//   float F = F_Schlick(LoH, float3(1.0), float3(1));
+//   float G = V_SmithGGXCorrelatedFast(NoV, NoL, roughness);
+
+//   // specular BRDF
+//   float3 Fr = (D * G) * F;
+
+//   // diffuse BRDF
+//   float3 Fd = diffuseColor * Fd_Lambert();
+
+//   // apply lighting ...
+
+// }
+
 
 /*
 PBR.metal rendering equation from Apple's LODwithFunctionSpecialization sample code is under Copyright © 2017 Apple Inc.
@@ -260,15 +285,15 @@ float3 render(Lighting lighting) {
   // Normal Distribution Function
   float Ds;
   if (specularRoughness >= 1.0) {
-    Ds = 1.0 / pi;
+    Ds = 1.0 / PI;
   } else {
     /* float a = nDoth * specularRoughness; */
     /* float k = specularRoughness / (1.0 - nDoth * nDoth + a * a); */
-    /* Ds = k * k * (1.0 / pi); */
+    /* Ds = k * k * (1.0 / PI); */
 
     float roughnessSqr = specularRoughness * specularRoughness;
     float d = (nDoth * roughnessSqr - nDoth) * nDoth + 1;
-    Ds = roughnessSqr / (pi * d * d);
+    Ds = roughnessSqr / (PI * d * d);
   }
   
   // Fresnel
